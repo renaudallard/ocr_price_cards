@@ -50,6 +50,20 @@ from pdfminer.pdftypes import resolve1
 
 from .pages import TextChar
 
+CHARACTERS: frozenset[str] = frozenset(
+    "".join(chr(code) for code in range(0x21, 0x7F))
+    + "¡¢£¥§©«®°±²³µ¶¿×÷"
+    + "ÀÁÂÃÄÅÆÇÈÉÊËÌÍÎÏÐÑÒÓÔÕÖØÙÚÛÜÝÞßàáâãäåæçèéêëìíîïðñòóôõöøùúûüýþÿ"
+    + "ŒœŠšŸŽž€–—‘’“”…‰•"
+)
+"""Characters a specimen sets: the Latin text a Belgian card can carry.
+
+A full font also carries Greek, Cyrillic and other scripts whose glyphs look
+exactly like Latin ones, and a few Latin marks that look exactly like others
+(a cedilla like a comma, a low quotation mark like a comma); setting those
+would make every word ambiguous for no card that ever prints them.
+"""
+
 SIZES: tuple[float, ...] = tuple(
     [4.0 + 0.25 * i for i in range(33)]
     + [12.5 + 0.5 * i for i in range(24)]
@@ -220,7 +234,7 @@ def specimen(
     assigned: dict[int, list[str]] = {}
     covered: set[str] = set()
     for index, font in enumerate(order):
-        mine = sorted(set(font.advances) - covered)
+        mine = sorted((set(font.advances) & CHARACTERS) - covered)
         if mine:
             assigned[index] = mine
             covered.update(mine)

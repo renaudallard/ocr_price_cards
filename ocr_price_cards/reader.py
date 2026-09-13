@@ -103,7 +103,8 @@ _NEIGHBOUR_GAP = 0.6
 _NEIGHBOUR_OVERLAP = 0.5
 _HEIGHT_MIN = 0.1
 _HEIGHT_MAX = 1.4
-_SPECK = 3
+_SPECK = 4
+_RULE_ASPECT = 6
 _STACK_OVERLAP = 0.5
 _STACK_SLACK = 0.2
 _STACK_GAP = 0.35
@@ -111,6 +112,8 @@ _STACK_GAP_SMALL = 1.5
 _SMALL_ALIKE = 2
 _PART_RATIO = 0.5
 _PART_RATIO_DOT = 0.7
+_BASE_HEIGHT = 8.0
+_STACK_GAP_BELOW = 0.15
 _BASE_WIDTH = 10.0
 _PART_WIDTH = 2.5
 _NEST_OVERLAP = 0.9
@@ -562,8 +565,17 @@ def _attaches(part: Blob, base: Blob) -> bool:
     if gap < -_STACK_SLACK * part.height:
         return False
     ratio = _PART_RATIO_DOT if part.height <= _SMALL_PART else _PART_RATIO
-    if part.height <= ratio * base.height:
-        if gap <= _STACK_GAP * base.height:
+    if part.height <= ratio * base.height and base.height <= _BASE_HEIGHT * part.height:
+        # A dot sits close over its stem and an accent close over its vowel;
+        # the dot of an exclamation mark and a cedilla sit closer still under
+        # their base. Anything further off belongs to another line.
+        below = part.y0 >= base.y1
+        limit = (
+            _STACK_GAP_BELOW * base.height + 1
+            if below
+            else min(_STACK_GAP * base.height, part.height + 2)
+        )
+        if gap <= limit:
             return True
         return overlap >= _NEST_OVERLAP * part.width and gap < 0
     # Two small marks over each other, the dots of a colon or the bars of an
@@ -834,6 +846,10 @@ def _in_text(blob: Blob, matched: list[Read], page: Page) -> bool:
         or int(core.any(axis=0).sum()) < 2
         or int(core.any(axis=1).sum()) < 2
     ):
+        return False
+    if blob.width >= _RULE_ASPECT * blob.height:
+        # A bar many times wider than it is tall is a rule or an underline;
+        # a dash is drawn in every size and reads as one.
         return False
     for read in matched:
         other = read.blob
