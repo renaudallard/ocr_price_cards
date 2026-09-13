@@ -1,0 +1,62 @@
+[build-system]
+requires = ["setuptools>=77"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "ocr-price-cards"
+version = "0.1.0"
+description = "Reads Belgian electricity and water tariff cards published as page images"
+readme = "README.md"
+license = "BSD-2-Clause"
+license-files = ["LICENSE"]
+authors = [{ name = "Renaud Allard", email = "renaud@allard.it" }]
+requires-python = ">=3.14"
+dependencies = [
+    "numpy>=2.2",
+    "pdfplumber>=0.11",
+    "pypdfium2>=5",
+]
+classifiers = [
+    "Programming Language :: Python :: 3.14",
+    "Topic :: Scientific/Engineering :: Image Recognition",
+]
+
+[project.urls]
+Homepage = "https://github.com/renaudallard/ocr_price_cards"
+
+[project.scripts]
+ocr-price-cards = "ocr_price_cards.__main__:main"
+
+[project.optional-dependencies]
+dev = ["pytest>=9", "ruff>=0.16", "mypy>=2"]
+
+[tool.setuptools.packages.find]
+include = ["ocr_price_cards*"]
+
+[tool.setuptools.package-data]
+ocr_price_cards = ["data/*.npz", "py.typed"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py314"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM", "RUF"]
+# RUF001 flags the en dashes and curly quotes the cards print, which the
+# reader has to name as glyphs.
+ignore = ["E501", "RUF001", "RUF002", "RUF003"]
+
+[tool.mypy]
+strict = true
+python_version = "3.14"
+
+[[tool.mypy.overrides]]
+module = ["pdfplumber", "pdfplumber.*", "pypdfium2", "pypdfium2.*"]
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = ["tests.*"]
+ignore_errors = true
