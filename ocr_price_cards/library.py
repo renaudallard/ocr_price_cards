@@ -35,6 +35,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import zipfile
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -328,7 +329,7 @@ class Library:
                 )
                 dpi = float(stored["dpi"])
                 words = set(json.loads(str(stored["words"])))
-        except (OSError, KeyError, ValueError) as err:
+        except (OSError, KeyError, ValueError, zipfile.BadZipFile) as err:
             raise LibraryError(f"{path}: cannot load the glyph library: {err}") from err
         templates: list[Template] = []
         offset = 0
