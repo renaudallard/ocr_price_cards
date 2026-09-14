@@ -152,6 +152,11 @@ class PageText:
     def text(self) -> str:
         return text_of(self.lines)
 
+    @property
+    def trusted_text(self) -> str:
+        """The text of the lines on which nothing was refused."""
+        return text_of([line for line in self.lines if not line.unread])
+
 
 @dataclass(slots=True)
 class Document:
@@ -162,6 +167,11 @@ class Document:
     @property
     def text(self) -> str:
         return "\n".join(page.text for page in self.pages)
+
+    @property
+    def trusted_text(self) -> str:
+        """The text of every line on which nothing was refused, the rest left out."""
+        return "\n".join(page.trusted_text for page in self.pages)
 
 
 @dataclass(slots=True)
@@ -262,6 +272,10 @@ def read_page(
     unread.extend(settle_sizes(lines, by_box, library, page))
     unread.extend(settle(lines, library.words))
     unread.extend(_overlapping(lines))
+    for box in unread:
+        line = _nearest(lines, box, page)
+        if line is not None:
+            line.unread += 1
     if unread and strict:
         box = unread[0]
         raise UnreadableError(page.number, box, _context(lines, box, page))
@@ -891,8 +905,8 @@ def _overlapping(lines: list[Line]) -> list[tuple[int, int, int, int]]:
     return out
 
 
-def _context(lines: list[Line], box: tuple[int, int, int, int], page: Page) -> str:
-    """The text of the line the box falls in, for the error message."""
+def _nearest(lines: list[Line], box: tuple[int, int, int, int], page: Page) -> Line | None:
+    """The line the box falls in, or the closest one."""
     _x, y = page.transform.to_pt(box[0], (box[1] + box[3]) / 2)
     closest: Line | None = None
     distance = float("inf")
@@ -900,6 +914,12 @@ def _context(lines: list[Line], box: tuple[int, int, int, int], page: Page) -> s
         gap = 0.0 if line.top <= y <= line.bottom else min(abs(y - line.top), abs(y - line.bottom))
         if gap < distance:
             distance, closest = gap, line
+    return closest
+
+
+def _context(lines: list[Line], box: tuple[int, int, int, int], page: Page) -> str:
+    """The text of the line the box falls in, for the error message."""
+    closest = _nearest(lines, box, page)
     return closest.text[:80] if closest is not None else ""
 
 

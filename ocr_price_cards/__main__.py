@@ -152,17 +152,20 @@ def _as_json(document: Document) -> dict[str, object]:
                 "source": page.source,
                 "unread": page.unread,
                 "lines": [
-                    [
-                        {
-                            "text": word.text,
-                            "x0": round(word.x0, 2),
-                            "top": round(word.top, 2),
-                            "x1": round(word.x1, 2),
-                            "bottom": round(word.bottom, 2),
-                            "source": word.source,
-                        }
-                        for word in line.words
-                    ]
+                    {
+                        "unread": line.unread,
+                        "words": [
+                            {
+                                "text": word.text,
+                                "x0": round(word.x0, 2),
+                                "top": round(word.top, 2),
+                                "x1": round(word.x1, 2),
+                                "bottom": round(word.bottom, 2),
+                                "source": word.source,
+                            }
+                            for word in line.words
+                        ],
+                    }
                     for line in page.lines
                 ],
             }

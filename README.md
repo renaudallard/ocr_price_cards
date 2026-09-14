@@ -86,7 +86,8 @@ pdfplumber.
    an ambiguity nothing settles, or two glyphs read on top of each other
    raise `UnreadableError` with the page, the pixel box and the line it sits
    on. Nothing is guessed. The `strict=False` reading lists those boxes
-   instead and is meant for looking at what a card does, not for billing.
+   instead, counts them on the line each sits on, and gives the text of the
+   other lines as `trusted_text`.
 
 ## Install
 
@@ -113,7 +114,19 @@ try:
     document = read_pdf(payload)       # pages, lines, words, sources
 except UnreadableError as err:
     ...                                # err.page, err.box, err.context
+
+document = read_pdf(payload, strict=False)
+document.text                          # every line, refused marks left out
+document.trusted_text                  # only the lines on which nothing was refused
+document.pages[0].unread               # the pixel boxes refused on the page
+document.pages[0].lines[3].unread      # how many of them sit on that line
 ```
+
+A consumer that needs certain figures reads with `strict=False` and takes
+them from `trusted_text`: a line that carries any refused mark is left out
+of it, so a figure that is there was read whole, and a figure that is
+missing was not read rather than misread. With `--json` each line carries
+its `unread` count.
 
 `read_pdf(payload, embedded=False)` renders every page instead of reading an
 embedded page image; `text_layer=False` reads the pixels alone, which is how
