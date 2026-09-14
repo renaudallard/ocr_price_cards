@@ -50,6 +50,8 @@ _Stack = tuple[
     npt.NDArray[np.float32],
     npt.NDArray[np.float32],
 ]
+_Key = tuple[tuple[int, ...], bytes, tuple[float, float] | None, int]
+"""What a match is cached under: the patch, the font sizes asked for and the size window."""
 
 FORMAT = 1
 
@@ -124,9 +126,7 @@ class Library:
     _bearings: dict[tuple[str, float], tuple[float, float]] = field(
         default_factory=dict, repr=False
     )
-    _cache: dict[tuple[tuple[int, ...], bytes, tuple[float, float] | None], list[Match]] = field(
-        default_factory=dict, repr=False
-    )
+    _cache: dict[_Key, list[Match]] = field(default_factory=dict, repr=False)
 
     def __post_init__(self) -> None:
         templates, self.templates = self.templates, []
@@ -194,7 +194,10 @@ class Library:
         are not compared at all. ``em`` restricts the templates to a range of
         font sizes in pixels.
         """
-        key = (patch.shape, quantize(patch).tobytes(), em)
+        # The size window belongs in the key: the same mark is matched at one
+        # pixel alone and at two as part of a stack or a joined run, and the
+        # two searches do not hold the same templates.
+        key = (patch.shape, quantize(patch).tobytes(), em, size_tolerance)
         cached = self._cache.get(key)
         if cached is not None:
             return cached
