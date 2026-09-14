@@ -99,10 +99,17 @@ def train_specimens(
     items: Iterable[Specimen],
     *,
     library: Library,
+    dpi: float | None = None,
     shifts: tuple[tuple[float, float], ...] = SUBPIXEL,
     report: Report | None = None,
 ) -> Library:
-    """Learn the glyphs of specimens, whose characters are known without reading a text layer."""
+    """Learn the glyphs of specimens, whose characters are known without reading a text layer.
+
+    ``dpi`` is checked against the library's, as :func:`train` checks it;
+    left out, the specimens are set at whatever the library was built at.
+    """
+    if dpi is not None and abs(library.dpi - dpi) > 1e-6:
+        raise ValueError(f"the library is built at {library.dpi} dpi, not {dpi}")
     for item in items:
         with Card(item.payload) as card:
             for shift in shifts:

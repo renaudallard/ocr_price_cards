@@ -197,7 +197,7 @@ def _specimen(args: argparse.Namespace) -> int:
         print(
             f"{item.family}: {sum(len(page) for page in item.chars)} characters set on {len(item.chars)} page(s)"
         )
-    train_specimens(items, library=library, shifts=shifts, report=print)
+    train_specimens(items, library=library, dpi=args.dpi, shifts=shifts, report=print)
     library.save(args.library)
     print(f"{args.library}: {len(library)} templates, {len(library.labels())} labels")
     return 0
