@@ -107,17 +107,30 @@ def main(argv: Sequence[str] | None = None) -> int:
     )
     check.add_argument("cards", type=Path, nargs="+")
     check.add_argument("--library", type=Path)
-    check.add_argument("--shift", default="0,0", help="sub-pixel rendering offset, e.g. 0.5,0.5")
+    check.add_argument(
+        "--shift", type=_shift, default=(0.0, 0.0), help="sub-pixel rendering offset, e.g. 0.5,0.5"
+    )
     check.add_argument("--quiet", action="store_true", help="only print the summary")
     check.set_defaults(func=_check)
 
     args = parser.parse_args(argv)
     try:
         result: int = args.func(args)
-    except OcrError as err:
+    except (OcrError, OSError, ValueError) as err:
         print(f"error: {err}", file=sys.stderr)
         return 2
     return result
+
+
+def _shift(value: str) -> tuple[float, float]:
+    """A sub-pixel rendering offset, written as two numbers with a comma between them."""
+    try:
+        x, y = (float(v) for v in value.split(","))
+    except ValueError:
+        raise argparse.ArgumentTypeError(
+            f"{value!r} is not a pair of numbers, e.g. 0.5,0.5"
+        ) from None
+    return x, y
 
 
 def _library(path: Path | None) -> Library:
@@ -215,10 +228,11 @@ def _words(args: argparse.Namespace) -> int:
 
 def _check(args: argparse.Namespace) -> int:
     library = _library(args.library)
-    sx, sy = (float(v) for v in args.shift.split(","))
     failed = 0
     for card in args.cards:
-        for page in load_pages(card.read_bytes(), dpi=library.dpi, embedded=False, shift=(sx, sy)):
+        for page in load_pages(
+            card.read_bytes(), dpi=library.dpi, embedded=False, shift=args.shift
+        ):
             expected = text_of(build_lines([glyph_from_char(char) for char in page.chars]))
             got = read_page(page, library, text_layer=False, strict=False)
             status = _verdict(expected, got.text, bool(got.unread))
