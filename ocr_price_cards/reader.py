@@ -50,7 +50,7 @@ import numpy.typing as npt
 from .errors import LibraryError, UnreadableError
 from .ink import MARGIN as INK_MARGIN
 from .ink import Blob, Ink
-from .layout import Glyph, Line, Word, build_lines, text_of
+from .layout import Glyph, Line, Word, build_lines, build_rows, text_of
 from .library import Library, Match
 from .pages import Page, TextChar, load_pages
 
@@ -263,15 +263,20 @@ def read_page(
     blobs = ink.blobs()
     if texts:
         blobs = _not_under_text(blobs, page)
-    marks = [blob for blob in blobs if blob.width <= MAX_GLYPH and blob.height <= MAX_GLYPH]
+    marks = [
+        blob
+        for blob in blobs
+        if blob.width <= MAX_GLYPH and blob.height <= MAX_GLYPH and not ink.between(blob)
+    ]
     reads = recognise(marks, ink, library)
     by_box = {read.blob.box: read for read in reads.matched}
-    images = [glyph_from_read(read, page) for read in reads.matched]
+    images = [glyph_from_read(read, page, library) for read in reads.matched]
     lines = build_lines(texts + images)
+    rows = build_rows(texts + images)
     unread = [blob.box for blob in reads.unmatched if _in_text(blob, reads.matched, page)]
-    unread.extend(settle_sizes(lines, by_box, library, page))
-    unread.extend(settle(lines, library.words))
-    unread.extend(_overlapping(lines))
+    unread.extend(settle_sizes(rows, by_box, library, page))
+    unread.extend(settle(rows, library.words))
+    unread.extend(_overlapping(rows))
     for box in unread:
         line = _nearest(lines, box, page)
         if line is not None:
@@ -752,7 +757,7 @@ def settle_sizes(
                     ]
                     if fitting:
                         read.candidates = fitting
-                glyph_from_read(read, page, into=glyph)
+                glyph_from_read(read, page, library, into=glyph)
     return boxes
 
 
@@ -927,7 +932,9 @@ def glyph_from_char(char: TextChar) -> Glyph:
     return Glyph(char.text, char.x0, char.x1, char.baseline, char.size, "text")
 
 
-def glyph_from_read(read: Read, page: Page, *, into: Glyph | None = None) -> Glyph:
+def glyph_from_read(
+    read: Read, page: Page, library: Library, *, into: Glyph | None = None
+) -> Glyph:
     """A glyph in page points from a patch and the template it matched, written ``into`` one if given."""
     template = read.match.template
     blob = read.blob
@@ -935,10 +942,11 @@ def glyph_from_read(read: Read, page: Page, *, into: Glyph | None = None) -> Gly
     x0, _ = page.transform.to_pt(blob.x0, 0.0)
     x1, _ = page.transform.to_pt(blob.x1, 0.0)
     _, baseline = page.transform.to_pt(0.0, blob.y0 + template.base)
+    lsb, rsb = library.bearings(template.label, template.em)
     glyph = into if into is not None else Glyph("", 0.0, 0.0, 0.0, 0.0, "image")
     glyph.text = template.label
-    glyph.x0 = x0 - template.lsb * size
-    glyph.x1 = x1 + template.rsb * size
+    glyph.x0 = x0 - lsb * size
+    glyph.x1 = x1 + rsb * size
     glyph.baseline = baseline
     glyph.size = size
     glyph.source = "image"
