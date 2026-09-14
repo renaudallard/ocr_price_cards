@@ -200,11 +200,22 @@ class Library:
                 if len(chosen) > SHORTLIST:
                     # Sort the candidates by how they compare blurred and in
                     # one placement, which a pixel of misplacement barely
-                    # moves, and keep only the closest for the exact search.
+                    # moves, and keep the closest for the exact search, plus
+                    # the closest of every other label: a runner-up label
+                    # has to be measured, not left out, for the reading to
+                    # know when it is ambiguous.
                     top, left = (height + 2 - th) // 2, (width + 2 - tw) // 2
                     soft = _blur(padded)[top : top + th, left : left + tw]
                     rough = np.abs(blurred[chosen] - soft).sum(axis=(1, 2))
-                    chosen = chosen[np.argsort(rough)[:SHORTLIST]]
+                    order = np.argsort(rough)
+                    keep = list(order[:SHORTLIST])
+                    seen = {self.templates[indices[chosen[i]]].label for i in keep}
+                    for i in order[SHORTLIST:]:
+                        label = self.templates[indices[chosen[i]]].label
+                        if label not in seen:
+                            seen.add(label)
+                            keep.append(i)
+                    chosen = chosen[np.array(keep)]
                 subset = stack[chosen]
                 # Every placement of the templates inside the padded patch at
                 # once: windows is (rows, columns, th, tw), the difference
