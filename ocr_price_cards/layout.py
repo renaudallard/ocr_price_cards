@@ -41,13 +41,15 @@ from dataclasses import dataclass
 
 X_TOLERANCE = 3.0
 Y_TOLERANCE = 3.0
-ASCENT = 0.8
+ASCENT = 0.75
+"""Where pdfplumber puts the top of a character above its baseline, in ems, for the fonts of the cards."""
+
 DESCENT = 0.2
 SPACE = 0.12
 """Gap between two pixel glyphs, as a fraction of the em, that reads as a space."""
 
 STEP = 0.75
-"""Points between two consecutive baselines that still belong to one line."""
+"""Points between two consecutive baselines that still belong to one row of glyphs."""
 
 
 @dataclass(slots=True)
@@ -55,7 +57,7 @@ class Glyph:
     """One character on the page, in points from the top left corner.
 
     ``x0``/``x1`` span the advance box, ``top``/``bottom`` the font box built
-    from the baseline and the size. ``source`` is ``text`` for a character the
+    from the baseline and the size as pdfplumber builds it. ``source`` is ``text`` for a character the
     PDF states and ``image`` for one read from pixels, whose ink box in canvas
     pixels is then in ``box``. ``alternatives`` are the other characters a
     pixel glyph could be when its shape alone does not say.
@@ -118,9 +120,14 @@ class Word:
 
 @dataclass(slots=True)
 class Line:
-    """Words whose baselines cluster within the tolerance, left to right."""
+    """Words whose tops cluster within the tolerance, left to right.
+
+    ``unread`` counts the marks on the line that were refused; a line with
+    any is not to be trusted, but the lines around it still are.
+    """
 
     words: list[Word]
+    unread: int = 0
 
     @property
     def text(self) -> str:
@@ -136,54 +143,78 @@ class Line:
 
 
 def cluster(values: Iterable[float], tolerance: float) -> dict[float, int]:
-    """Group sorted distinct values into runs of close neighbours no wider than ``tolerance``.
+    """Group sorted distinct values into runs where each is within ``tolerance`` of the one before.
 
-    The baselines of one line differ by a fraction of a point, so a run is
-    chained on a step well under a point; a step wider than that is the next
-    line. pdfplumber chains on the whole tolerance instead, and on a table
-    whose small header cells each carry their own lines a few points apart
-    that chain runs across the cells and interleaves them.
+    This is pdfplumber's ``cluster_objects``: the chain runs as long as the
+    steps are small, however far it gets from where it started.
     """
     out: dict[float, int] = {}
     group = -1
-    first: float | None = None
     last: float | None = None
     for value in sorted(set(values)):
-        if first is None or last is None or value - last > STEP or value - first > tolerance:
+        if last is None or value - last > tolerance:
             group += 1
-            first = value
         out[value] = group
         last = value
     return out
 
 
 def build_words(glyphs: list[Glyph]) -> list[Word]:
-    """Words as pdfplumber's ``extract_words`` forms them, rows clustered by baseline."""
-    rows = cluster((glyph.baseline for glyph in glyphs), Y_TOLERANCE)
+    """Words as pdfplumber's ``extract_words`` forms them, rows clustered by top."""
+    rows = cluster((glyph.top for glyph in glyphs), Y_TOLERANCE)
     by_row: dict[int, list[Glyph]] = {}
     for glyph in glyphs:
-        by_row.setdefault(rows[glyph.baseline], []).append(glyph)
+        by_row.setdefault(rows[glyph.top], []).append(glyph)
+    return [word for row in sorted(by_row) for word in _words(by_row[row])]
+
+
+def _words(row: list[Glyph]) -> list[Word]:
+    """The words of one row, left to right."""
     words: list[Word] = []
-    for row in sorted(by_row):
-        current: list[Glyph] = []
-        for glyph in sorted(by_row[row], key=lambda g: g.x0):
-            if glyph.text.isspace():
-                if current:
-                    words.append(Word(current))
-                current = []
-                continue
-            if current and begins_word(current[-1], glyph):
+    current: list[Glyph] = []
+    for glyph in sorted(row, key=lambda g: g.x0):
+        if glyph.text.isspace():
+            if current:
                 words.append(Word(current))
-                current = []
-            current.append(glyph)
-        if current:
+            current = []
+            continue
+        if current and begins_word(current[-1], glyph):
             words.append(Word(current))
+            current = []
+        current.append(glyph)
+    if current:
+        words.append(Word(current))
     return words
+
+
+def build_rows(glyphs: list[Glyph]) -> list[Line]:
+    """The rows of glyphs as they were set: one baseline each, to within a fraction of a point.
+
+    pdfplumber chains lines while each top is within three points of the one
+    before, and on a table whose small header cells each carry two lines it
+    chains the two and interleaves their characters. The text is given that
+    way, because that is what the consumers of a card were written against;
+    what a glyph is, though, is settled on the word it was set in, and that
+    word sits on one baseline. Within each of pdfplumber's lines the
+    baselines are chained again on a step of a fraction of a point.
+    """
+    lines = cluster((glyph.top for glyph in glyphs), Y_TOLERANCE)
+    by_line: dict[int, list[Glyph]] = {}
+    for glyph in glyphs:
+        by_line.setdefault(lines[glyph.top], []).append(glyph)
+    rows: list[Line] = []
+    for line in sorted(by_line):
+        runs = cluster((glyph.baseline for glyph in by_line[line]), STEP)
+        by_run: dict[int, list[Glyph]] = {}
+        for glyph in by_line[line]:
+            by_run.setdefault(runs[glyph.baseline], []).append(glyph)
+        rows.extend(Line(_words(by_run[run])) for run in sorted(by_run))
+    return rows
 
 
 def begins_word(previous: Glyph, glyph: Glyph) -> bool:
     """Whether ``glyph`` starts a new word after ``previous`` on the same row."""
-    if glyph.x0 < previous.x0 or glyph.baseline > previous.baseline + Y_TOLERANCE:
+    if glyph.x0 < previous.x0 or abs(glyph.top - previous.top) > Y_TOLERANCE:
         return True
     gap = glyph.x0 - previous.x1
     if previous.source == "text" and glyph.source == "text":
@@ -194,10 +225,10 @@ def begins_word(previous: Glyph, glyph: Glyph) -> bool:
 def build_lines(glyphs: list[Glyph]) -> list[Line]:
     """Lines as pdfplumber's ``extract_text`` clusters words, words left to right."""
     words = build_words(glyphs)
-    rows = cluster((word.baseline for word in words), Y_TOLERANCE)
+    rows = cluster((word.top for word in words), Y_TOLERANCE)
     by_row: dict[int, list[Word]] = {}
     for word in words:
-        by_row.setdefault(rows[word.baseline], []).append(word)
+        by_row.setdefault(rows[word.top], []).append(word)
     return [Line(sorted(by_row[row], key=lambda w: w.x0)) for row in sorted(by_row)]
 
 

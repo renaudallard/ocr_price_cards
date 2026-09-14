@@ -70,7 +70,19 @@ pdfplumber.
    bare stem is an `l` at a smaller size and an `i` at the word's size), from
    the lexicon of words the training cards spell, and from the case of the
    rest of the word. What none of that settles is refused.
-6. **Refusal.** A mark that sits in a row of read glyphs and matches nothing,
+6. **Layout.** Glyphs become words and lines by pdfplumber's rules, so that
+   the text is what `extract_text()` gave for the same card when it still
+   had a text layer: characters chain into a line while each top is within
+   three points of the one before, a word ends at a gap wider than three
+   points between characters the PDF states and wider than an eighth of the
+   em between glyphs read from pixels, which is what a space is. Where two
+   lines of a small header cell sit within three points, pdfplumber chains
+   them into one line and interleaves their characters, and so does the
+   reader; a glyph is settled on the word it was set in, though, which sits
+   on one baseline. A row of display-sized marks a quarter of which read as
+   nothing is a wordmark set in a font of its own, and is skipped, not
+   refused.
+7. **Refusal.** A mark that sits in a row of read glyphs and matches nothing,
    an ambiguity nothing settles, or two glyphs read on top of each other
    raise `UnreadableError` with the page, the pixel box and the line it sits
    on. Nothing is guessed. The `strict=False` reading lists those boxes
@@ -154,6 +166,9 @@ the ambiguity threshold.
 - It reads at the resolution it was trained at, 216 dpi. A page image at
   another resolution is rendered at 216 dpi instead of being read directly.
 - It does not read rotated text, photographs or text over gradients.
+- Lines are pdfplumber's lines, with what that entails: two lines of a small
+  table cell a few points apart chain into one, exactly as `extract_text()`
+  chains them on a card with a text layer.
 - A page image that is a stale month's card stays stale: the reader says
   what the pixels say. Whether a figure read off the image is current is for
   the caller to decide.

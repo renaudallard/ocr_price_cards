@@ -2,7 +2,15 @@
 
 from __future__ import annotations
 
-from ocr_price_cards.layout import SPACE, X_TOLERANCE, Glyph, build_lines, build_words, cluster
+from ocr_price_cards.layout import (
+    SPACE,
+    X_TOLERANCE,
+    Glyph,
+    build_lines,
+    build_rows,
+    build_words,
+    cluster,
+)
 
 
 def _glyph(
@@ -18,9 +26,10 @@ def test_cluster_keeps_one_line_together_and_splits_the_next() -> None:
     assert groups[100.0] != groups[106.0]
 
 
-def test_cluster_does_not_chain_a_staircase_of_cells() -> None:
-    groups = cluster([100.0, 102.5, 105.0, 107.5], 3.0)
-    assert len(set(groups.values())) == 4
+def test_cluster_chains_a_staircase_the_way_pdfplumber_does() -> None:
+    groups = cluster([100.0, 102.5, 105.0, 107.5, 111.0], 3.0)
+    assert len({groups[100.0], groups[102.5], groups[105.0], groups[107.5]}) == 1
+    assert groups[111.0] != groups[107.5]
 
 
 def test_pixel_glyphs_split_at_a_space_sized_gap() -> None:
@@ -60,3 +69,14 @@ def test_lines_are_ordered_top_down_and_words_left_to_right() -> None:
     lines = build_lines(glyphs)
     assert [line.text for line in lines] == ["x", "a b"]
     assert lines[1].words[0].source == "image"
+
+
+def test_rows_keep_the_two_lines_of_a_cell_apart_where_lines_chain_them() -> None:
+    # Two lines 2.5pt apart in a header cell: pdfplumber chains them into one
+    # line and interleaves the characters, a row keeps each word whole.
+    size = 5.0
+    upper = [_glyph(c, 10.0 + 3.0 * i, 3.0, 100.0, size) for i, c in enumerate("Totaal")]
+    lower = [_glyph(c, 11.5 + 3.0 * i, 3.0, 102.5, size) for i, c in enumerate("kWh")]
+    glyphs = upper + lower
+    assert len(build_lines(glyphs)) == 1
+    assert [word.text for row in build_rows(glyphs) for word in row.words] == ["Totaal", "kWh"]
