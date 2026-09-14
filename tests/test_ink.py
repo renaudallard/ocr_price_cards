@@ -102,3 +102,39 @@ def test_blob_of_box_normalizes_against_the_ink_it_holds() -> None:
     assert blob.box == (8, 12, 16, 34)
     assert blob.patch.max() == 1.0
     assert ink.blob((0, 0, 5, 5)) is None
+
+
+def test_a_mark_between_two_backgrounds_is_a_cell_edge_not_a_glyph() -> None:
+    # A white margin, then a teal band whose left edge blends over three
+    # columns, the way the rounded end of a cell does, and a dark mark inside.
+    pixels = np.full((60, 120, 3), 255, dtype=np.uint8)
+    teal = np.array((90, 190, 170))
+    pixels[:, 43:] = teal
+    pixels[:, 40] = ((teal + 255 * 3) // 4).astype(np.uint8)
+    pixels[:, 41] = ((teal + 255) // 2).astype(np.uint8)
+    pixels[:, 42] = ((teal * 3 + 255) // 4).astype(np.uint8)
+    pixels[20:36, 60:64] = (0, 0, 0)
+    ink = Ink.of(pixels)
+    blobs = sorted(ink.blobs(), key=lambda blob: blob.x0)
+    assert len(blobs) == 2
+    edge, glyph = blobs
+    assert edge.x1 <= 43 < glyph.x0
+    assert ink.between(edge)
+    assert not ink.between(glyph)
+
+
+def test_a_bold_stroke_is_not_a_background_but_a_cell_full_of_text_is() -> None:
+    # A lilac band carrying a white bar as wide and tall as a title letter's
+    # stem, and a white page carrying a lilac cell whose padding is too
+    # narrow for a solid square but which bears three dark marks.
+    lilac = (214, 181, 254)
+    pixels = np.full((200, 400, 3), 255, dtype=np.uint8)
+    pixels[10:110, :] = lilac
+    pixels[20:100, 40:54] = (255, 255, 255)
+    pixels[130:170, 60:340] = lilac
+    for x in (100, 160, 220):
+        pixels[142:158, x : x + 12] = (5, 8, 37)
+    ink = Ink.of(pixels)
+    assert ink.colours[ink.background[60, 47]].tolist() == list(lilac)
+    assert ink.colours[ink.background[150, 80]].tolist() == list(lilac)
+    assert ink.colours[ink.background[150, 106]].tolist() == list(lilac)

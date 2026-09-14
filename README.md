@@ -38,13 +38,19 @@ pdfplumber.
 
 ## How it reads
 
-1. **Ink.** The page is flat colour almost everywhere. The large flat regions
-   are the backgrounds, every other pixel belongs to the nearest one along
-   its row, and its colour distance from that background is how much ink it
-   carries. Marks are the connected runs of ink, each cut out and normalized
+1. **Ink.** The page is flat colour almost everywhere. The large flat
+   regions are the backgrounds: those that hold a solid square, and those
+   too full of text to hold one but bearing marks that are not their own
+   edges. The stem of a bold title letter is large and flat too, and
+   bears nothing, so it stays a letter. Every other pixel belongs to the
+   nearest background along its row, and its colour distance from that
+   background is how much ink it carries. Marks are the connected runs of ink, each cut out and normalized
    so that its background reads 0 and its ink 1: dark text on white, white
    text on a teal band and navy text in a green cell come out as the same
-   shape.
+   shape. A mark with one background on its left and another on its right,
+   its own colour between the two, is the anti-aliased edge of a coloured
+   cell, not a glyph. A dense grid of dot-sized marks is a QR code, and
+   nothing inside it is text, whatever some of its modules read as.
 2. **Stacks.** A dot over a stem, dots over a vowel, the two dots of a colon
    and the parts of a percent sign are gathered into one mark before
    matching, each part attaching to the base whose columns it shares and

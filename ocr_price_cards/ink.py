@@ -52,8 +52,13 @@ Colour = tuple[int, int, int]
 FLAT_TOLERANCE = 3
 """Neighbouring pixels within this many levels of each other, per channel, are flat colour."""
 
-MIN_CONTRAST = 96
-"""Sum of the per-channel distances a mark needs from its background to count as ink."""
+MIN_CONTRAST = 80
+"""Sum of the per-channel distances a mark needs from its background to count as ink.
+
+The faintest text on the cards, the white title on a lilac band, is 92
+away from its background; the blended edges of coloured cells are judged
+by what lies on either side of them, not by how faint they are.
+"""
 
 MARGIN = 1
 """Pixels of anti-aliasing kept around a mark's core."""
@@ -62,7 +67,9 @@ BACKGROUND_AREA = 900
 """Pixels a flat region needs to be a background rather than the inside of a letter."""
 
 BACKGROUND_SIDE = 20
-"""Pixels a background region must span both ways; the inside of a bold stroke is narrower."""
+"""Pixels a background region must span both ways, and the side of the solid square that tells it from a stroke."""
+
+_LETTER_HEIGHT = 5
 
 MAX_MARK = 400
 """Marks wider or taller than this are boxes and pictures, never glyphs, and are not cut out."""
@@ -120,12 +127,100 @@ class Ink:
         flat = ~edge_mask(pixels, tolerance)
         regions, count, boxes = label(flat, eight=False)
         colours = _region_colours(pixels, regions, count)
-        background = _background_map(regions, count, boxes)
+        big = np.zeros(count + 1, dtype=np.bool_)
+        wide = (boxes[:, 2] - boxes[:, 0]) >= BACKGROUND_SIDE
+        tall = (boxes[:, 3] - boxes[:, 1]) >= BACKGROUND_SIDE
+        big[1:] = (boxes[:, 4] >= BACKGROUND_AREA) & wide & tall
+        ink = cls._against(pixels, regions, colours, big)
+        doubtful = np.nonzero(big & ~_solid(flat, regions, count))[0].tolist()
+        letters = [region for region in doubtful if ink._letter(boxes[region - 1])]
+        if letters:
+            big[letters] = False
+            ink = cls._against(pixels, regions, colours, big)
+        return ink
+
+    @classmethod
+    def _against(
+        cls,
+        pixels: Pixels,
+        regions: Labels,
+        colours: npt.NDArray[np.int16],
+        big: npt.NDArray[np.bool_],
+    ) -> Ink:
+        """Every pixel's distance from its background, the ``big`` regions being the backgrounds."""
+        background = _background_map(regions, big)
         distance = (
             np.abs(pixels.astype(np.int16) - colours[background]).sum(axis=2).astype(np.int32)
         )
         distance[background == 0] = 0
         return cls(pixels, distance, background, colours)
+
+    def _letter(self, box: npt.NDArray[np.int32]) -> bool:
+        """Whether a background region without a solid square in it is the inside of a letter.
+
+        The stem of a bold title letter is a flat region of many pixels,
+        wide and tall by its box, and were it a background the letter would
+        fall apart into the slivers of its own edges. A coloured cell of the
+        same size, with no solid square in it either because it is full of
+        text, carries marks that are not edges: that text. Only the pixels
+        around the region are looked at, cut out with a margin so that the
+        edges of the region see what lies on their far side.
+        """
+        x0, y0, x1, y1 = (int(v) for v in box[:4])
+        pad = 2 * MARGIN
+        left, top = max(x0 - pad, 0), max(y0 - pad, 0)
+        crop = Ink(
+            self.pixels[top : y1 + pad, left : x1 + pad],
+            self.distance[top : y1 + pad, left : x1 + pad],
+            self.background[top : y1 + pad, left : x1 + pad],
+            self.colours,
+        )
+        for blob in crop.blobs():
+            if (
+                blob.x0 + left >= x0 - MARGIN
+                and blob.y0 + top >= y0 - MARGIN
+                and blob.x1 + left <= x1 + MARGIN
+                and blob.y1 + top <= y1 + MARGIN
+                and blob.height >= _LETTER_HEIGHT
+                and not crop.between(blob)
+            ):
+                return False
+        return True
+
+    def between(self, blob: Blob) -> bool:
+        """Whether the mark is the anti-aliased edge between two backgrounds, not a glyph.
+
+        Where the rounded end of a coloured cell runs nearly vertical, the
+        pixels blending its colour into the page around it form a sliver a
+        few pixels wide, one background on its left and another on its right,
+        and its own colour lies between the two. Text runs across the edge of
+        a faint band now and then, and a glyph there has a background on each
+        side too, but its ink is nothing like either.
+        """
+        height, width = self.background.shape
+        sides = (
+            (
+                self.background[blob.y0 : blob.y1, max(blob.x0 - 1, 0)],
+                self.background[blob.y0 : blob.y1, min(blob.x1, width - 1)],
+            ),
+            (
+                self.background[max(blob.y0 - 1, 0), blob.x0 : blob.x1],
+                self.background[min(blob.y1, height - 1), blob.x0 : blob.x1],
+            ),
+        )
+        ink = np.array(blob.ink, dtype=np.int16)
+        for one, other in sides:
+            if (one != other).sum() * 2 < len(one):
+                continue
+            a = self.colours[_mode(one)]
+            b = self.colours[_mode(other)]
+            apart = int(np.abs(a - b).max())
+            if (
+                apart
+                and max(np.abs(ink - a).max(), np.abs(ink - b).max()) <= apart + FLAT_TOLERANCE
+            ):
+                return True
+        return False
 
     def blobs(self, *, min_contrast: int = MIN_CONTRAST, max_mark: int = MAX_MARK) -> list[Blob]:
         """Every mark on the page, each with its normalized patch.
@@ -299,13 +394,30 @@ def _region_colours(pixels: Pixels, regions: Labels, count: int) -> npt.NDArray[
     return np.rint(sums / areas[:, None]).astype(np.int16)
 
 
-def _background_map(regions: Labels, count: int, boxes: Boxes) -> Labels:
-    """Every pixel's background: its own flat region when large enough, else the nearest one along its row."""
+def _solid(flat: npt.NDArray[np.bool_], regions: Labels, count: int) -> npt.NDArray[np.bool_]:
+    """Which regions hold a solid square of flat pixels ``BACKGROUND_SIDE`` on a side.
+
+    The stem of a bold letter set large enough is a flat region of many
+    pixels, wide and tall by its box; it is a stroke all the same, and no
+    square of that size fits in it. A background has room for one.
+    """
+    side = BACKGROUND_SIDE
+    height, width = flat.shape
+    solid = np.zeros(count + 1, dtype=np.bool_)
+    if height < side or width < side:
+        return solid
+    sums = np.zeros((height + 1, width + 1), dtype=np.int32)
+    sums[1:, 1:] = flat.cumsum(axis=0, dtype=np.int32).cumsum(axis=1, dtype=np.int32)
+    windows = sums[side:, side:] - sums[:-side, side:] - sums[side:, :-side] + sums[:-side, :-side]
+    full = windows == side * side
+    solid[np.unique(regions[: height - side + 1, : width - side + 1][full])] = True
+    solid[0] = False
+    return solid
+
+
+def _background_map(regions: Labels, big: npt.NDArray[np.bool_]) -> Labels:
+    """Every pixel's background: its own flat region when that is one, else the nearest one along its row."""
     height, width = regions.shape
-    big = np.zeros(count + 1, dtype=np.bool_)
-    wide = (boxes[:, 2] - boxes[:, 0]) >= BACKGROUND_SIDE
-    tall = (boxes[:, 3] - boxes[:, 1]) >= BACKGROUND_SIDE
-    big[1:] = (boxes[:, 4] >= BACKGROUND_AREA) & wide & tall
     assigned = np.where(big[regions], regions, 0)
     has = assigned > 0
     columns = np.arange(width)
@@ -316,6 +428,12 @@ def _background_map(regions: Labels, count: int, boxes: Boxes) -> Labels:
     from_right = assigned[rows, np.clip(right, 0, width - 1)]
     nearer_left = (left >= 0) & ((right >= width) | (columns - left <= right - columns))
     return np.where(nearer_left, from_left, np.where(right < width, from_right, 0)).astype(np.int32)
+
+
+def _mode(labels: npt.NDArray[np.int32]) -> int:
+    """The most common label of a strip of the background map."""
+    values, counts = np.unique(labels, return_counts=True)
+    return int(values[int(np.argmax(counts))])
 
 
 def mode_colour(colours: npt.NDArray[np.uint8]) -> Colour:
