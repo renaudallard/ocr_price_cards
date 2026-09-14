@@ -273,7 +273,12 @@ def _embedded_image(
     src_w, src_h = (int(v) for v in info["srcsize"])
     if src_w <= 0 or src_h <= 0:
         return None
+    # Both ways: an image at the right resolution across and another down is
+    # squashed, and its glyphs would be matched against templates the wrong
+    # shape. Rendering the page instead gives them back their proportions.
     if abs(src_w / width_pt * 72.0 - dpi) > _DPI_TOLERANCE * dpi:
+        return None
+    if abs(src_h / height_pt * 72.0 - dpi) > _DPI_TOLERANCE * dpi:
         return None
     for obj in pdf_page.get_objects(filter=(pdfium_c.FPDF_PAGEOBJ_IMAGE,)):
         if tuple(obj.get_px_size()) != (src_w, src_h):
