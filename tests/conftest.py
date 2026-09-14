@@ -92,8 +92,8 @@ def text_card() -> bytes:
 
 @pytest.fixture(scope="session")
 def library(text_card: bytes) -> Library:
-    """A library learnt from the synthetic card at three sub-pixel offsets."""
-    return train([("card", text_card)], shifts=((0.0, 0.0), (0.5, 0.0), (0.0, 0.5)))
+    """A library learnt from the synthetic card at the sub-pixel offsets a shipped library uses."""
+    return train([("card", text_card)])
 
 
 def _figure_box(payload: bytes, text: str, size: float) -> tuple[float, float, float, float]:

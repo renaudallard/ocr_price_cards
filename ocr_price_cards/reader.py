@@ -54,7 +54,7 @@ from .layout import Glyph, Line, Word, build_lines, build_rows, text_of
 from .library import Library, Match
 from .pages import Page, TextChar, load_pages
 
-ACCEPT = 0.10
+ACCEPT = 0.08
 """Worst score a template may have and still be read."""
 
 MARGIN = 0.12
@@ -83,6 +83,9 @@ UNION_ACCEPT = 0.06
 
 SIZE_SLACK = 0.2
 """How far a glyph's font size may sit from its word's before it is read again at the word's size."""
+
+SIZE_RETRY_SLACK = 0.02
+"""How much worse the reading at the word's size may score than the best reading at any size."""
 
 MAX_GLYPH = 300
 """Marks taller or wider than this many pixels are boxes and pictures, never glyphs."""
@@ -187,8 +190,9 @@ class Read:
     """A patch and the templates it could be, best first.
 
     ``parts`` are the marks the patch was made of. A glyph that arrived as
-    two marks, a dot over a stem, can only be a template made of two, so
-    such a reading keeps no candidate made of one.
+    two marks, a dot over a stem, can only be a template made of two, and
+    one mark can only be a template made of one: a bare stem is not an i,
+    whose dot would be a mark of its own at that size.
     """
 
     blob: Blob
@@ -196,10 +200,9 @@ class Read:
     parts: list[Blob]
 
     def __post_init__(self) -> None:
-        if len(self.parts) > 1:
-            kept = [match for match in self.candidates if match.template.parts == len(self.parts)]
-            if kept:
-                self.candidates = kept
+        kept = [match for match in self.candidates if match.template.parts == len(self.parts)]
+        if kept:
+            self.candidates = kept
 
     @property
     def match(self) -> Match:
@@ -746,7 +749,11 @@ def settle_sizes(
                             read.blob.patch, em=(em * (1 - SIZE_SLACK), em * (1 + SIZE_SLACK))
                         )
                     )
-                    if again is None:
+                    # At the word's size the mark must read about as well as
+                    # it did at any size; a reading that only comes close
+                    # once the right size is imposed is a glyph the library
+                    # does not hold.
+                    if again is None or again[0].score > read.match.score + SIZE_RETRY_SLACK:
                         boxes.append(glyph.box)
                         continue
                     read.candidates = again

@@ -6,9 +6,10 @@ import pytest
 from conftest import pages_of
 
 from ocr_price_cards.errors import UnreadableError
+from ocr_price_cards.ink import Blob
 from ocr_price_cards.layout import build_lines, text_of
-from ocr_price_cards.library import Library
-from ocr_price_cards.reader import glyph_from_char, read_page, read_pdf
+from ocr_price_cards.library import Library, Match, Template
+from ocr_price_cards.reader import Read, glyph_from_char, read_page, read_pdf
 from ocr_price_cards.train import train
 
 
@@ -30,7 +31,8 @@ def test_a_rasterized_card_reads_exactly_like_its_text_layer(
 def test_a_card_rendered_off_the_pixel_grid_still_reads_exactly(
     text_card: bytes, library: Library
 ) -> None:
-    page = pages_of(text_card, embedded=False, shift=(0.3, 0.7))[0]
+    # Half a pixel lies farthest from every offset the library learnt at.
+    page = pages_of(text_card, embedded=False, shift=(0.5, 0.5))[0]
     result = read_page(page, library, text_layer=False)
     assert result.text == _expected(text_card)
 
@@ -73,3 +75,16 @@ def test_read_card_returns_the_text(text_card: bytes, library: Library) -> None:
     from ocr_price_cards import read_card
 
     assert read_card(text_card, library=library, embedded=False) == _expected(text_card)
+
+
+def test_a_reading_keeps_only_templates_made_of_as_many_marks() -> None:
+    import numpy as np
+
+    patch = np.ones((4, 2), dtype=np.float32)
+    blob = Blob(0, 0, 2, 4, patch, (255, 255, 255), (0, 0, 0))
+    stem = Template("I", patch, 21.0, 4.0, 0.0, 0.0, parts=1)
+    dotted = Template("i", patch, 21.0, 4.0, 0.0, 0.0, parts=2)
+    read = Read(blob, [Match("I", 0.04, stem), Match("i", 0.07, dotted)], [blob])
+    assert [match.label for match in read.candidates] == ["I"]
+    read = Read(blob, [Match("i", 0.03, dotted), Match("I", 0.05, stem)], [blob, blob])
+    assert [match.label for match in read.candidates] == ["i"]
