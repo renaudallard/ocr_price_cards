@@ -39,7 +39,7 @@ import numpy as np
 import numpy.typing as npt
 
 from .ink import Blob, Ink
-from .layout import build_words
+from .layout import Glyph, Word, build_rows, build_words
 from .library import Library, Template
 from .pages import DEFAULT_DPI, Card, Page, TextChar
 from .reader import MAX_GLYPH, PUNCTUATION, glyph_from_char
@@ -124,13 +124,16 @@ def harvest_words(
     *,
     report: Report | None = None,
 ) -> int:
-    """Add to the library's lexicon the words its own reading of the cards' pixels spells without doubt.
+    """Add to the library's lexicon the words its own reading of the cards' pixels spells.
 
-    The text layer of a card is what the lexicon is first built from, but
-    where a card overprints text, as table headers set at an angle do, that
-    layer comes out scrambled while the pixels still read cleanly. A word
-    counts only when every glyph of it read as one thing and nothing in it
-    was refused.
+    The text layer is what the lexicon is first built from, but where a card
+    overprints text, as table headers set at an angle do, that layer comes
+    out scrambled while the pixels still read cleanly. The pixels give the
+    words their shape, taken row by row as they were set rather than as
+    pdfplumber chains the lines of a header cell into one; each glyph the
+    reading is not sure of is settled by the character the text layer puts
+    at that place, and a word with a glyph that stays open or was refused is
+    not taken.
     """
     from .reader import read_page
 
@@ -140,9 +143,12 @@ def harvest_words(
             for index in range(len(card)):
                 page = card.page(index, dpi=library.dpi, embedded=False)
                 result = read_page(page, library, text_layer=False, strict=False)
-                refused = {box for box in result.unread}
-                for word in result.words:
-                    if any(glyph.alternatives or glyph.box in refused for glyph in word.glyphs):
+                zones = _char_zones(page)
+                glyphs = [glyph for word in result.words for glyph in word.glyphs]
+                for word in (word for row in build_rows(glyphs) for word in row.words):
+                    if not all(_settled(glyph, zones) for glyph in word.glyphs):
+                        continue
+                    if any(_touches(box, word) for box in result.unread):
                         continue
                     text = word.text.strip(PUNCTUATION)
                     if (
@@ -155,6 +161,49 @@ def harvest_words(
         if report is not None:
             report(f"{name}: {added} words added, {len(library.words)} in the lexicon")
     return added
+
+
+def _touches(box: tuple[int, int, int, int], word: Word) -> bool:
+    """Whether a refused mark lies within the pixels of a word."""
+    boxes = [glyph.box for glyph in word.glyphs if glyph.box is not None]
+    if not boxes:
+        return False
+    x0 = min(b[0] for b in boxes)
+    y0 = min(b[1] for b in boxes)
+    x1 = max(b[2] for b in boxes)
+    y1 = max(b[3] for b in boxes)
+    return min(x1, box[2]) > max(x0, box[0]) and min(y1, box[3]) > max(y0, box[1])
+
+
+def _char_zones(page: Page) -> list[tuple[float, float, float, float, str]]:
+    zones: list[tuple[float, float, float, float, str]] = []
+    for char in page.chars:
+        if char.text.isspace():
+            continue
+        em = char.size * page.transform.sx
+        x0, base = page.transform.to_px(char.x0, char.baseline)
+        x1, _ = page.transform.to_px(char.x1, char.baseline)
+        zones.append((x0, base - em, x1, base + _ZONE_BELOW * em, char.text))
+    return zones
+
+
+def _settled(glyph: Glyph, zones: list[tuple[float, float, float, float, str]]) -> bool:
+    """Whether a glyph reads as one thing, or as the thing the text layer puts at its place."""
+    if not glyph.alternatives:
+        return True
+    if glyph.box is None:
+        return False
+    bx0, by0, bx1, by1 = glyph.box
+    best: tuple[float, str] | None = None
+    for x0, y0, x1, y1, text in zones:
+        shared = max(0.0, min(x1, bx1) - max(x0, bx0)) * max(0.0, min(y1, by1) - max(y0, by0))
+        if shared > 0 and (best is None or shared > best[0]):
+            best = (shared, text)
+    if best is None or best[1] not in (glyph.text, *glyph.alternatives):
+        return False
+    glyph.text = best[1]
+    glyph.alternatives = ()
+    return True
 
 
 def learn_page(page: Page, library: Library) -> int:
