@@ -33,6 +33,7 @@ so a glyph reads as what it looks like and nothing else.
 
 from __future__ import annotations
 
+import hashlib
 import json
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -122,7 +123,7 @@ class Library:
     words: set[str] = field(default_factory=set)
     _by_size: dict[tuple[int, int], list[int]] = field(default_factory=dict, repr=False)
     _stacks: dict[tuple[int, int], _Stack] = field(default_factory=dict, repr=False)
-    _keys: dict[tuple[str, bytes], int] = field(default_factory=dict, repr=False)
+    _keys: dict[tuple[str, tuple[int, ...], bytes], int] = field(default_factory=dict, repr=False)
     _bearings: dict[tuple[str, float], tuple[float, float]] = field(
         default_factory=dict, repr=False
     )
@@ -137,17 +138,25 @@ class Library:
         return len(self.templates)
 
     def add(self, template: Template) -> Template:
-        """Add a template, folding it into an identical one already held."""
+        """Add a template, folding it into an identical one already held.
+
+        Templates are looked up by a digest of their pixels rather than by the
+        pixels themselves: keeping the pixels twice costs as much as the
+        library does. A digest that matches is still checked against the
+        patch it stands for, so the fold is on the pixels as before.
+        """
         quantized = quantize(template.patch)
         key = (
             template.label,
-            np.array(quantized.shape, dtype=np.int32).tobytes() + quantized.tobytes(),
+            quantized.shape,
+            hashlib.blake2b(quantized.tobytes(), digest_size=16).digest(),
         )
         index = self._keys.get(key)
         if index is not None:
             held = self.templates[index]
-            held.count += template.count
-            return held
+            if np.array_equal(quantize(held.patch), quantized):
+                held.count += template.count
+                return held
         template.patch = quantized.astype(np.float32) / 255.0
         self._keys[key] = len(self.templates)
         self.templates.append(template)
