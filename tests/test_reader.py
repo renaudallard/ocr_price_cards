@@ -9,7 +9,7 @@ from ocr_price_cards.errors import UnreadableError
 from ocr_price_cards.ink import Blob
 from ocr_price_cards.layout import build_lines, text_of
 from ocr_price_cards.library import Library, Match, Template
-from ocr_price_cards.reader import Read, glyph_from_char, read_page, read_pdf
+from ocr_price_cards.reader import Read, _without_texture, glyph_from_char, read_page, read_pdf
 from ocr_price_cards.train import train
 
 
@@ -88,3 +88,34 @@ def test_a_reading_keeps_only_templates_made_of_as_many_marks() -> None:
     assert [match.label for match in read.candidates] == ["I"]
     read = Read(blob, [Match("i", 0.03, dotted), Match("I", 0.05, stem)], [blob, blob])
     assert [match.label for match in read.candidates] == ["i"]
+
+
+def test_everything_inside_a_grid_of_dots_goes_with_the_grid() -> None:
+    import numpy as np
+
+    def blob(x0: int, y0: int, width: int, height: int) -> Blob:
+        return Blob(
+            x0,
+            y0,
+            x0 + width,
+            y0 + height,
+            np.ones((height, width), np.float32),
+            (255,) * 3,
+            (0,) * 3,
+        )
+
+    def read(b: Blob, label: str) -> Read:
+        template = Template(label, b.patch, 21.0, float(b.height), 0.0, 0.0)
+        return Read(b, [Match(label, 0.02, template)], [b])
+
+    # A QR code: a grid of 4px modules, one of which pairs into a colon and
+    # four of which gather into an o. Then a word well away from it.
+    modules = [
+        blob(100 + 8 * i, 100 + 8 * j, 4, 4) for i in range(6) for j in range(6) if (i + j) % 3
+    ]
+    colon = read(blob(108, 100, 4, 12), ":")
+    o = read(blob(116, 116, 12, 12), "o")
+    word = [read(blob(300 + 10 * i, 104, 8, 10), c) for i, c in enumerate("kWh")]
+    matched, unmatched = _without_texture([colon, o, *word], modules)
+    assert [r.match.label for r in matched] == ["k", "W", "h"]
+    assert unmatched == []

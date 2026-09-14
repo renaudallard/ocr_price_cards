@@ -93,7 +93,7 @@ MAX_GLYPH = 300
 PUNCTUATION = "()[]{}.,:;!?*'\"«»"
 """Characters a word may start or end with that its spelling does not include."""
 
-NOISE = frozenset(".,-–—'’‘`·:;\"“”*")
+NOISE = frozenset(".,-–—_=~'’‘`·:;\"“”*")
 """Glyphs that only mean something next to a word; alone they are the dots of a QR code."""
 
 STROKES = frozenset("iIl|1!")
@@ -108,6 +108,12 @@ _HEIGHT_MIN = 0.1
 _HEIGHT_MAX = 1.4
 _SPECK = 4
 _RULE_ASPECT = 6
+_TEXTURE_COUNT = 12
+_MODULE = 5
+_DISPLAY = 2.0
+_WORDMARK_PART = 0.5
+_WORDMARK_SHARE = 0.25
+_TEXTURE_REACH = 3.0
 _STACK_OVERLAP = 0.5
 _STACK_SLACK = 0.2
 _STACK_GAP = 0.35
@@ -127,6 +133,7 @@ _ROW_OVERLAP = 0.5
 _ROW_REACH = 2.0
 _JOIN_GAP = 0.3
 _NOISE_REACH = 1.0
+_NOISE_BASELINE = 0.15
 _BASELINE_SLACK = 0.08
 _BASELINE_SLACK_PX = 1.5
 _MAX_AMBIGUOUS = 6
@@ -292,13 +299,10 @@ def read_page(
 
 def recognise(blobs: list[Blob], ink: Ink, library: Library) -> Reads:
     """Read every mark, row by row, as the cheapest sequence of glyphs covering the row."""
-    matched: list[Read] = []
-    unmatched: list[Blob] = []
-    for row in _rows(_pieces(blobs, ink)):
-        reads, skipped = _read_row(row, ink, library)
-        matched.extend(reads)
-        unmatched.extend(skipped)
+    rows = [_read_row(row, ink, library) for row in _rows(_pieces(blobs, ink))]
+    matched, unmatched = _without_wordmarks(rows)
     matched = _without_noise(_drop_inner(matched))
+    matched, unmatched = _without_texture(matched, unmatched)
     unmatched = [blob for blob in unmatched if not _inside_any(blob, matched)]
     _settle_baselines(matched)
     return Reads(matched, unmatched)
@@ -575,10 +579,12 @@ def _attaches(part: Blob, base: Blob) -> bool:
 
     A part sits over or under its base, so their columns overlap; the dots of
     a diaeresis over a narrow stem only sit beside it, so a dot-sized part may
-    also be within its own width of the base's columns.
+    also be within its own width of the base's columns. A hyphen beside a
+    comma is as small and as close, but not a dot.
     """
     overlap = min(part.x1, base.x1) - max(part.x0, base.x0)
-    beside = part.height <= _SMALL_PART and overlap > -part.width
+    dot = part.height <= _SMALL_PART and part.width <= _SMALL_PART
+    beside = dot and overlap > -part.width
     if overlap < _STACK_OVERLAP * part.width and not beside:
         return False
     if base.width > _BASE_WIDTH * part.width or part.width > _PART_WIDTH * base.width:
@@ -649,14 +655,19 @@ def _drop_inner(matched: list[Read]) -> list[Read]:
 
 
 def _without_noise(matched: list[Read]) -> list[Read]:
-    """Drop punctuation and bare strokes with no word beside them: the modules of a QR code read as dots, dashes and bars."""
+    """Drop punctuation and bare strokes with no word beside them: the modules of a QR code read as dots, dashes and bars.
+
+    A glyph is beside the mark when it overlaps it vertically or shares its
+    baseline: an underscore hangs below the letters around it.
+    """
     order = sorted(matched, key=lambda read: read.blob.x0)
     keep: list[Read] = []
     for i, read in enumerate(order):
         if read.match.label not in NOISE and read.match.label not in STROKES:
             keep.append(read)
             continue
-        reach = _NOISE_REACH * read.match.template.em
+        em = read.match.template.em
+        reach = _NOISE_REACH * em
         near = False
         for j in itertools.chain(range(i - 1, -1, -1), range(i + 1, len(order))):
             other = order[j]
@@ -667,12 +678,112 @@ def _without_noise(matched: list[Read]) -> list[Read]:
                 if j > i:
                     break
                 continue
-            if min(read.blob.y1, other.blob.y1) - max(read.blob.y0, other.blob.y0) > 0:
+            overlap = min(read.blob.y1, other.blob.y1) - max(read.blob.y0, other.blob.y0)
+            if overlap > 0 or abs(read.baseline - other.baseline) <= _NOISE_BASELINE * em:
                 near = True
                 break
         if near:
             keep.append(read)
     return keep
+
+
+def _speck(blob: Blob) -> bool:
+    """A mark whose core is a few pixels: anti-aliasing at a box corner, not a glyph that failed.
+
+    Only a mark that reads as nothing is judged by this; the period of a
+    five point "excl." is three pixels of core too, and reads as a period
+    beside its word. Thin is not the test either: a hyphen at seven points
+    is one row of core, and so is the stem of an l.
+    """
+    return int((blob.patch >= 0.5).sum()) < _SPECK
+
+
+def _without_wordmarks(rows: list[tuple[list[Read], list[Blob]]]) -> tuple[list[Read], list[Blob]]:
+    """The readings and the unread marks of every row but the wordmarks.
+
+    Text in a font the library holds reads mark for mark at any size. The
+    letters of a logo are drawn in a font of their own: a few of them happen
+    to look like some glyph the library holds and read, the rest read as
+    nothing, and a row of display-sized marks a quarter of which read as
+    nothing is such a wordmark, not a heading with one glyph refused.
+    """
+    heights = [read.blob.height for reads, _ in rows for read in reads]
+    if not heights:
+        return [], [blob for _, skipped in rows for blob in skipped]
+    typical = statistics.median(heights)
+    matched: list[Read] = []
+    unmatched: list[Blob] = []
+    for reads, skipped in rows:
+        if reads:
+            height = statistics.median(read.blob.height for read in reads)
+            marks = [
+                blob
+                for blob in skipped
+                if blob.height >= _WORDMARK_PART * height and not _inside_any(blob, reads)
+            ]
+            if height >= _DISPLAY * typical and len(marks) >= _WORDMARK_SHARE * (
+                len(reads) + len(marks)
+            ):
+                continue
+        matched.extend(reads)
+        unmatched.extend(skipped)
+    return matched, unmatched
+
+
+def _without_texture(matched: list[Read], unmatched: list[Blob]) -> tuple[list[Read], list[Blob]]:
+    """Drop every mark inside a dense cluster of dot-sized marks: a QR code, whatever parts of it read as.
+
+    Text never packs a dozen dot-sized marks into a few of their own widths;
+    a QR code does, and enough of its modules pair up into colons, stems
+    and dots, or gather into an o or an n, to keep the rest looking like
+    text that failed. The cluster is the modules chained within a few
+    module widths of each other, and everything within its box goes.
+    """
+    marks = [read.blob for read in matched] + unmatched
+    modules = [b for b in marks if b.height <= _MODULE and b.width <= _MODULE]
+    if len(modules) < _TEXTURE_COUNT:
+        return matched, unmatched
+    order = sorted(modules, key=lambda b: b.x0)
+    cx = np.array([(b.x0 + b.x1) / 2.0 for b in order])
+    cy = np.array([(b.y0 + b.y1) / 2.0 for b in order])
+    reach = _TEXTURE_REACH * _MODULE
+    parent = list(range(len(order)))
+
+    def find(i: int) -> int:
+        while parent[i] != i:
+            parent[i] = parent[parent[i]]
+            i = parent[i]
+        return i
+
+    for i in range(len(order)):
+        stop = int(np.searchsorted(cx, cx[i] + reach, side="right"))
+        for j in np.nonzero(np.abs(cy[i + 1 : stop] - cy[i]) <= reach)[0].tolist():
+            parent[find(i)] = find(i + 1 + j)
+    clusters: dict[int, list[Blob]] = {}
+    for i, blob in enumerate(order):
+        clusters.setdefault(find(i), []).append(blob)
+    boxes = [
+        (
+            min(b.x0 for b in cluster) - _MODULE,
+            min(b.y0 for b in cluster) - _MODULE,
+            max(b.x1 for b in cluster) + _MODULE,
+            max(b.y1 for b in cluster) + _MODULE,
+        )
+        for cluster in clusters.values()
+        if len(cluster) >= _TEXTURE_COUNT
+    ]
+    if not boxes:
+        return matched, unmatched
+
+    def inside(blob: Blob) -> bool:
+        x = (blob.x0 + blob.x1) / 2.0
+        y = (blob.y0 + blob.y1) / 2.0
+        return any(x0 <= x <= x1 and y0 <= y <= y1 for x0, y0, x1, y1 in boxes)
+
+    return (
+        [read for read in matched if not inside(read.blob)],
+        [blob for blob in unmatched if not inside(blob)],
+    )
 
 
 def _inside(inner: Blob, outer: Blob) -> bool:
@@ -862,16 +973,10 @@ def _text_zones(chars: list[TextChar], page: Page) -> npt.NDArray[np.float64]:
 def _in_text(blob: Blob, matched: list[Read], page: Page) -> bool:
     """Whether an unread mark sits in a row of read glyphs, which makes it a glyph that failed.
 
-    A mark whose core is a few pixels, or a single pixel thin, is a speck of
-    anti-aliasing at the corner or the edge of a box, not a glyph, wherever
-    it sits.
+    A speck of anti-aliasing at the corner or the edge of a box is not a
+    glyph wherever it sits.
     """
-    core = blob.patch >= 0.5
-    if (
-        int(core.sum()) < _SPECK
-        or int(core.any(axis=0).sum()) < 2
-        or int(core.any(axis=1).sum()) < 2
-    ):
+    if _speck(blob):
         return False
     if blob.width >= _RULE_ASPECT * blob.height:
         # A bar many times wider than it is tall is a rule or an underline;

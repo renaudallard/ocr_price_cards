@@ -165,6 +165,16 @@ passes when every glyph agrees; a difference is printed as a diff. Rendering
 with `--shift 0.33,0.67` reads the page off the pixel grid, which is what a
 card rasterized elsewhere looks like.
 
+Some differences are in the cards, not in the reading, and the diff shows
+them page after page: a title the text layer states twice on top of itself
+and the pixels show once; a plus sign drawn as a shape between two boxes,
+which the pixels read as `+` and the text layer does not have; two text runs
+set a visible gap apart with no space character between them, which
+pdfplumber joins (`inmei`, `1.Elke`) and the pixels separate; and a table
+label whose top sits three points from its figures' to within a pixel, which
+pdfplumber chains onto one line or not as the rounding falls. On the Ecofix
+cards every other line agrees glyph for glyph, and nothing is refused.
+
 Against the real Ecofix cards the reading is scored the other way round: the
 page image the September card carries is July's card, whose DSO tables and
 labels are identical to the May card's text layer, so every glyph of those
@@ -179,6 +189,11 @@ the ambiguity threshold.
 - It reads at the resolution it was trained at, 216 dpi. A page image at
   another resolution is rendered at 216 dpi instead of being read directly.
 - It does not read rotated text, photographs or text over gradients.
+- A logo whose letters are set in a font the library does not hold is
+  skipped as a wordmark; a heading in a known font with one glyph refused is
+  refused, as it should be. The title of the Ecofix Flexy cards is such a
+  heading: the export clips the descender of its `y`, and the mark that
+  remains matches nothing whole.
 - Lines are pdfplumber's lines, with what that entails: two lines of a small
   table cell a few points apart chain into one, exactly as `extract_text()`
   chains them on a card with a text layer.
