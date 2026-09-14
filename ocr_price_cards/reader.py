@@ -283,7 +283,11 @@ def read_page(
     images = [glyph_from_read(read, page, library) for read in reads.matched]
     lines = build_lines(texts + images)
     rows = build_rows(texts + images)
-    unread = [blob.box for blob in reads.unmatched if _in_text(blob, reads.matched, page)]
+    zones = [
+        (float(a), float(b), float(c), float(d))
+        for a, b, c, d in _text_zones(page.chars, page).tolist()
+    ]
+    unread = [blob.box for blob in reads.unmatched if _in_text(blob, reads.matched, page, zones)]
     unread.extend(settle_sizes(rows, by_box, library, page))
     unread.extend(settle(rows, library.words))
     unread.extend(_overlapping(rows))
@@ -988,7 +992,9 @@ def _text_zones(chars: list[TextChar], page: Page) -> npt.NDArray[np.float64]:
     return zones
 
 
-def _in_text(blob: Blob, matched: list[Read], page: Page) -> bool:
+def _in_text(
+    blob: Blob, matched: list[Read], page: Page, zones: list[tuple[float, float, float, float]]
+) -> bool:
     """Whether an unread mark sits in a row of read glyphs, which makes it a glyph that failed.
 
     A speck of anti-aliasing at the corner or the edge of a box is not a
@@ -1007,7 +1013,7 @@ def _in_text(blob: Blob, matched: list[Read], page: Page) -> bool:
         ):
             continue
         em = read.match.template.em
-        gap = max(0, other.x0 - blob.x1, blob.x0 - other.x1)
+        gap = float(max(0, other.x0 - blob.x1, blob.x0 - other.x1))
         if gap > _NEIGHBOUR_GAP * em:
             continue
         if not _HEIGHT_MIN * em <= blob.height <= _HEIGHT_MAX * em:
@@ -1015,7 +1021,7 @@ def _in_text(blob: Blob, matched: list[Read], page: Page) -> bool:
         if blob.bg != other.bg:
             continue
         return True
-    for x0, y0, x1, y1 in _text_zones(page.chars, page).tolist():
+    for x0, y0, x1, y1 in zones:
         if min(blob.y1, y1) - max(blob.y0, y0) < _NEIGHBOUR_OVERLAP * blob.height:
             continue
         em = (y1 - y0) / (_TEXT_ABOVE + _TEXT_BELOW)
