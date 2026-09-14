@@ -257,37 +257,42 @@ def _document(
     # handle that goes away takes the objects placed on it along.
     pages: list[pdfium.PdfPage] = []
     chars: list[list[TextChar]] = []
-    y = 0.0
-    for size in sizes:
-        step = _PITCH * size
-        per_line = max(1, int((_PAGE_WIDTH - 2 * _MARGIN) / step))
-        for start in range(0, len(characters), per_line):
-            if not pages or y - _LEADING * size < _MARGIN:
-                pages.append(document.new_page(_PAGE_WIDTH, _PAGE_HEIGHT))
-                chars.append([])
-                y = _PAGE_HEIGHT - _MARGIN
-            y -= _LEADING * size
-            for column, character in enumerate(characters[start : start + per_line]):
-                obj = pdfium_c.FPDFPageObj_CreateTextObj(document, handle, size)
-                wide = (ctypes.c_ushort * 2)(ord(character), 0)
-                pdfium_c.FPDFText_SetText(obj, wide)
-                x = _MARGIN + column * step
-                pdfium_c.FPDFPageObj_Transform(obj, 1, 0, 0, 1, x, y)
-                pdfium_c.FPDFPage_InsertObject(pages[-1], obj)
-                chars[-1].append(
-                    TextChar(
-                        character,
-                        x,
-                        x + font.advances[character] * size,
-                        _PAGE_HEIGHT - y,
-                        size,
-                        family,
-                    )
-                )
-    for page in pages:
-        pdfium_c.FPDFPage_GenerateContent(page)
     out = BytesIO()
-    document.save(out)
+    y = 0.0
+    try:
+        for size in sizes:
+            step = _PITCH * size
+            per_line = max(1, int((_PAGE_WIDTH - 2 * _MARGIN) / step))
+            for start in range(0, len(characters), per_line):
+                if not pages or y - _LEADING * size < _MARGIN:
+                    pages.append(document.new_page(_PAGE_WIDTH, _PAGE_HEIGHT))
+                    chars.append([])
+                    y = _PAGE_HEIGHT - _MARGIN
+                y -= _LEADING * size
+                for column, character in enumerate(characters[start : start + per_line]):
+                    obj = pdfium_c.FPDFPageObj_CreateTextObj(document, handle, size)
+                    wide = (ctypes.c_ushort * 2)(ord(character), 0)
+                    pdfium_c.FPDFText_SetText(obj, wide)
+                    x = _MARGIN + column * step
+                    pdfium_c.FPDFPageObj_Transform(obj, 1, 0, 0, 1, x, y)
+                    pdfium_c.FPDFPage_InsertObject(pages[-1], obj)
+                    chars[-1].append(
+                        TextChar(
+                            character,
+                            x,
+                            x + font.advances[character] * size,
+                            _PAGE_HEIGHT - y,
+                            size,
+                            family,
+                        )
+                    )
+        for page in pages:
+            pdfium_c.FPDFPage_GenerateContent(page)
+        document.save(out)
+    finally:
+        # The text objects carry the font themselves, so the handle the load
+        # took out is ours to give back once the document is written.
+        pdfium_c.FPDFFont_Close(handle)
     return Specimen(family, out.getvalue(), chars)
 
 
