@@ -294,6 +294,7 @@ def read_page(
     if unread and strict:
         box = unread[0]
         raise UnreadableError(page.number, box, _context(lines, box, page))
+    lines = _without_refused(lines, set(unread))
     return PageText(page.number, page.width, page.height, page.source, lines, unread)
 
 
@@ -1034,6 +1035,28 @@ def _overlapping(lines: list[Line]) -> list[tuple[int, int, int, int]]:
                     if overlap > _WORD_OVERLAP * min(a.x1 - a.x0, b.x1 - b.x0):
                         out.append(a.box if a.box[1] <= b.box[1] else b.box)
     return out
+
+
+def _without_refused(lines: list[Line], boxes: set[tuple[int, int, int, int]]) -> list[Line]:
+    """Drop the glyphs whose marks were refused, so the text never carries a guess.
+
+    A mark that matched nothing never became a glyph and is already absent. An
+    ambiguity nothing settled, a glyph that would not read at its word's size
+    and two glyphs read on top of each other did become one, each carrying the
+    reading that was just rejected; printing that reading is guessing. The line
+    keeps its ``unread`` count, so it stays out of ``trusted_text`` whether or
+    not anything is left of it.
+    """
+    if not boxes:
+        return lines
+    kept: list[Line] = []
+    for line in lines:
+        for word in line.words:
+            word.glyphs = [glyph for glyph in word.glyphs if glyph.box not in boxes]
+        line.words = [word for word in line.words if word.glyphs]
+        if line.words:
+            kept.append(line)
+    return kept
 
 
 def _nearest(lines: list[Line], box: tuple[int, int, int, int], page: Page) -> Line | None:

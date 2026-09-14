@@ -87,7 +87,9 @@ pdfplumber.
    raise `UnreadableError` with the page, the pixel box and the line it sits
    on. Nothing is guessed. The `strict=False` reading lists those boxes
    instead, counts them on the line each sits on, and gives the text of the
-   other lines as `trusted_text`.
+   other lines as `trusted_text`. A refused mark leaves the text altogether,
+   so the word it sat in comes out short rather than wrong, and a line whose
+   every mark was refused is gone.
 
 ## Install
 
