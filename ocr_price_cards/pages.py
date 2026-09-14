@@ -110,7 +110,13 @@ class Card:
 
     def __init__(self, payload: bytes) -> None:
         self._document = pdfium.PdfDocument(payload)
-        self._plumber = pdfplumber.open(BytesIO(payload))
+        try:
+            self._plumber = pdfplumber.open(BytesIO(payload))
+        except Exception:
+            # Nothing has entered the with statement yet, so close by hand
+            # what the line above opened.
+            self._document.close()
+            raise
         self._chars: dict[int, list[TextChar]] = {}
 
     def __len__(self) -> int:
