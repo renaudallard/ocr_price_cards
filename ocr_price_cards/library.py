@@ -164,6 +164,7 @@ class Library:
         size = (template.height, template.width)
         self._by_size.setdefault(size, []).append(len(self.templates) - 1)
         self._stacks.pop(size, None)
+        self._bearings.clear()
         self._cache.clear()
         return template
 
