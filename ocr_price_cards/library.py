@@ -217,6 +217,7 @@ class Library:
         padded[1:-1, 1:-1] = patch
         mass = float(padded.sum())
         area = float(padded.size)
+        blur: Patch | None = None
         best: dict[str, Match] = {}
         for th in range(height - size_tolerance, height + size_tolerance + 1):
             for tw in range(width - size_tolerance, width + size_tolerance + 1):
@@ -240,7 +241,9 @@ class Library:
                     # has to be measured, not left out, for the reading to
                     # know when it is ambiguous.
                     top, left = (height + 2 - th) // 2, (width + 2 - tw) // 2
-                    soft = _blur(padded)[top : top + th, left : left + tw]
+                    if blur is None:
+                        blur = _blur(padded)
+                    soft = blur[top : top + th, left : left + tw]
                     rough = np.abs(blurred[chosen] - soft).sum(axis=(1, 2))
                     order = np.argsort(rough)
                     keep = list(order[:SHORTLIST])
