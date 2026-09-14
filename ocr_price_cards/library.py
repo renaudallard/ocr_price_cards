@@ -121,6 +121,9 @@ class Library:
     _by_size: dict[tuple[int, int], list[int]] = field(default_factory=dict, repr=False)
     _stacks: dict[tuple[int, int], _Stack] = field(default_factory=dict, repr=False)
     _keys: dict[tuple[str, bytes], int] = field(default_factory=dict, repr=False)
+    _bearings: dict[tuple[str, float], tuple[float, float]] = field(
+        default_factory=dict, repr=False
+    )
     _cache: dict[tuple[tuple[int, ...], bytes, tuple[float, float] | None], list[Match]] = field(
         default_factory=dict, repr=False
     )
@@ -153,6 +156,24 @@ class Library:
         self._stacks.pop(size, None)
         self._cache.clear()
         return template
+
+    def bearings(self, label: str, em: float) -> tuple[float, float]:
+        """The side bearings of ``label`` at ``em``, in ems, as the mean over its templates.
+
+        Each template's own bearings carry the rounding of the raster it was
+        cut from, up to a pixel a side; the mean over the sub-pixel offsets
+        it was learnt at is the font's.
+        """
+        key = (label, em)
+        found = self._bearings.get(key)
+        if found is None:
+            alike = [t for t in self.templates if t.label == label and abs(t.em - em) < 0.01]
+            found = (
+                sum(t.lsb for t in alike) / len(alike),
+                sum(t.rsb for t in alike) / len(alike),
+            )
+            self._bearings[key] = found
+        return found
 
     def labels(self) -> set[str]:
         return {template.label for template in self.templates}
