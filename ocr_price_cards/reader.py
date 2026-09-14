@@ -886,10 +886,11 @@ def settle(lines: list[Line], words: set[str]) -> list[tuple[int, int, int, int]
     against the case of the rest of the word: a capital among capitals, a
     lowercase letter inside a lowercase word. What neither settles is refused.
     """
+    known = words | {part for word in words for part in word.split("-") if part}
     open_boxes: list[tuple[int, int, int, int]] = []
     for line in lines:
         for word in line.words:
-            open_boxes.extend(_settle_word(word, words))
+            open_boxes.extend(_settle_word(word, known))
     return open_boxes
 
 
@@ -902,7 +903,7 @@ def _settle_word(word: Word, words: set[str]) -> list[tuple[int, int, int, int]]
         known = [
             picks
             for picks in itertools.product(*choices)
-            if _spelling(word, positions, picks).strip(PUNCTUATION) in words
+            if _known(_spelling(word, positions, picks), words)
         ]
         if len(known) == 1:
             for i, text in zip(positions, known[0], strict=True):
@@ -936,6 +937,19 @@ def _settle_word(word: Word, words: set[str]) -> list[tuple[int, int, int, int]]
         glyph.text = picked
         glyph.alternatives = ()
     return boxes
+
+
+def _known(spelling: str, words: set[str]) -> bool:
+    """Whether the training cards spell this word, or every part of it around its hyphens.
+
+    ``words`` holds the parts of the compounds the cards spell as well: a
+    card that spells Flexy-formule knows formule.
+    """
+    text = spelling.strip(PUNCTUATION)
+    if text in words:
+        return True
+    parts = [part.strip(PUNCTUATION) for part in text.split("-")]
+    return len(parts) > 1 and all(part in words for part in parts)
 
 
 def _spelling(word: Word, positions: list[int], picks: tuple[str, ...]) -> str:

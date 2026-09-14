@@ -7,9 +7,16 @@ from conftest import pages_of
 
 from ocr_price_cards.errors import UnreadableError
 from ocr_price_cards.ink import Blob
-from ocr_price_cards.layout import build_lines, text_of
+from ocr_price_cards.layout import Glyph, Line, Word, build_lines, text_of
 from ocr_price_cards.library import Library, Match, Template
-from ocr_price_cards.reader import Read, _without_texture, glyph_from_char, read_page, read_pdf
+from ocr_price_cards.reader import (
+    Read,
+    _without_texture,
+    glyph_from_char,
+    read_page,
+    read_pdf,
+    settle,
+)
 from ocr_price_cards.train import train
 
 
@@ -119,3 +126,19 @@ def test_everything_inside_a_grid_of_dots_goes_with_the_grid() -> None:
     matched, unmatched = _without_texture([colon, o, *word], modules)
     assert [r.match.label for r in matched] == ["k", "W", "h"]
     assert unmatched == []
+
+
+def test_a_compound_settles_on_the_words_around_its_hyphen() -> None:
+    glyphs = [
+        Glyph(c, 10.0 + 4.0 * i, 14.0 + 4.0 * i, 100.0, 7.0, "image", box=(i, 0, i + 1, 1))
+        for i, c in enumerate("Online-formule")
+    ]
+    glyphs[0].alternatives = ("0",)
+    glyphs[7].alternatives = ("t",)
+    line = Line([Word(glyphs)])
+    assert settle([line], {"Online", "formule"}) == []
+    assert line.text == "Online-formule"
+    glyphs[0].alternatives = ("0",)
+    assert settle([line], {"formule"}) == [(0, 0, 1, 1)]
+    glyphs[0].alternatives = ("0",)
+    assert settle([line], {"Online", "Flexy-formule"}) == []
