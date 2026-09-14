@@ -744,7 +744,10 @@ def _without_texture(matched: list[Read], unmatched: list[Blob]) -> tuple[list[R
     modules = [b for b in marks if b.height <= _MODULE and b.width <= _MODULE]
     if len(modules) < _TEXTURE_COUNT:
         return matched, unmatched
-    order = sorted(modules, key=lambda b: b.x0)
+    # Sorted on the centre, which is what the search below looks for: the
+    # modules are not all one width, so ordering them by their left edge
+    # leaves the centres out of order and the search answers anything.
+    order = sorted(modules, key=lambda b: b.x0 + b.x1)
     cx = np.array([(b.x0 + b.x1) / 2.0 for b in order])
     cy = np.array([(b.y0 + b.y1) / 2.0 for b in order])
     reach = _TEXTURE_REACH * _MODULE
