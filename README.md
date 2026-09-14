@@ -95,8 +95,10 @@ Python 3.14 or later.
 
     pip install .
 
-The package ships the library for the fonts the Belgian cards use, built
-from cards that still carry a text layer.
+The package ships the library for the Ecofix cards: the Product Sans faces
+they embed, learnt from the May 2026 cards that still carry a text layer
+and set again at every size from 4 to 36 points, with the lexicon of the
+words those cards spell. `read_card` uses it unless given another.
 
 ## Use
 

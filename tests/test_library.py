@@ -95,3 +95,12 @@ def test_a_broken_file_is_refused(tmp_path: Path) -> None:
     path.write_bytes(b"not a library")
     with pytest.raises(LibraryError):
         Library.load(path)
+
+
+def test_the_shipped_library_loads_and_covers_the_figures() -> None:
+    from ocr_price_cards import default_library
+
+    library = default_library()
+    assert library.dpi == 216.0
+    assert set("0123456789,.€") <= library.labels()
+    assert "Fluvius" in library.words
