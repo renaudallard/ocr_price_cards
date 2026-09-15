@@ -261,3 +261,15 @@ def test_a_short_heading_is_refused_rather_than_taken_for_a_wordmark() -> None:
     matched, unmatched = _without_wordmarks([row(7, 4), (body, [])])
     assert not [r for r in matched if r.blob.height == 34]
     assert unmatched == []
+
+
+def test_a_caption_against_a_code_keeps_its_first_letter() -> None:
+    code = [
+        _read_of(_mark(100 + 8 * i, 100 + 8 * j, 4, 4), ".") for i in range(8) for j in range(8)
+    ]
+    edge = 100 + 8 * 7 + 4
+    for gap in (0, 1, 2):
+        word = [_read_of(_mark(edge + gap + 9 * k, 120, 7, 11), c) for k, c in enumerate("kWh")]
+        matched, _ = _without_texture(code + word, [])
+        assert "".join(r.match.label for r in matched if r.match.label != ".") == "kWh"
+        assert not [r for r in matched if r.match.label == "."]

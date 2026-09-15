@@ -799,9 +799,25 @@ def _without_texture(matched: list[Read], unmatched: list[Blob]) -> tuple[list[R
         return matched, unmatched
 
     def inside(blob: Blob) -> bool:
-        x = (blob.x0 + blob.x1) / 2.0
-        y = (blob.y0 + blob.y1) / 2.0
-        return any(x0 <= x <= x1 and y0 <= y <= y1 for x0, y0, x1, y1 in boxes)
+        """Whether the mark belongs to the cluster rather than to the page.
+
+        The box is grown by a module so that a module on the cluster's edge
+        goes with it. That reach lands on whatever is printed alongside, so
+        only a mark of module size is taken on its centre; anything larger
+        has to lie wholly within the modules themselves, and a caption set
+        against the edge of a code keeps its first letter.
+        """
+        if blob.height <= _MODULE and blob.width <= _MODULE:
+            x = (blob.x0 + blob.x1) / 2.0
+            y = (blob.y0 + blob.y1) / 2.0
+            return any(x0 <= x <= x1 and y0 <= y <= y1 for x0, y0, x1, y1 in boxes)
+        return any(
+            x0 + _MODULE <= blob.x0
+            and blob.x1 <= x1 - _MODULE
+            and y0 + _MODULE <= blob.y0
+            and blob.y1 <= y1 - _MODULE
+            for x0, y0, x1, y1 in boxes
+        )
 
     return (
         [read for read in matched if not inside(read.blob)],
