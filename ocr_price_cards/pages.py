@@ -111,14 +111,20 @@ class Card:
     """A PDF opened once: its text layer per page, and any page rendered on demand."""
 
     def __init__(self, payload: bytes) -> None:
-        self._document = pdfium.PdfDocument(payload)
+        # A card is a file from elsewhere, and either reader may refuse it
+        # for reasons of its own. Whatever they raise, the caller asked for
+        # a card and did not get one.
+        try:
+            self._document = pdfium.PdfDocument(payload)
+        except Exception as err:
+            raise OcrError(f"cannot read the card: {err}") from err
         try:
             self._plumber = pdfplumber.open(BytesIO(payload))
-        except Exception:
+        except Exception as err:
             # Nothing has entered the with statement yet, so close by hand
             # what the line above opened.
             self._document.close()
-            raise
+            raise OcrError(f"cannot read the card: {err}") from err
         rendered, stated = len(self._document), len(self._plumber.pages)
         if rendered != stated:
             # The length is taken from one reader and the pages from the

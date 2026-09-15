@@ -8,6 +8,7 @@ from typing import Any, ClassVar
 import pytest
 
 import ocr_price_cards.pages as pages
+from ocr_price_cards.errors import OcrError
 
 
 def test_a_card_that_opens_half_way_closes_what_it_opened(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -22,9 +23,17 @@ def test_a_card_that_opens_half_way_closes_what_it_opened(monkeypatch: pytest.Mo
 
     monkeypatch.setattr(pages.pdfium, "PdfDocument", lambda payload: Document())
     monkeypatch.setattr(pages.pdfplumber, "open", refuse)
-    with pytest.raises(ValueError):
+    with pytest.raises(OcrError, match="cannot read the card"):
         pages.Card(b"not really a pdf")
     assert closed == ["pdfium"]
+
+
+def test_a_card_neither_reader_will_take_is_refused() -> None:
+    # Whatever the readers raise over a file that is not a card, the caller
+    # asked for a card and did not get one.
+    for payload in (b"", b"certainly not a pdf", b"%PDF-1.7\nand then nothing"):
+        with pytest.raises(OcrError, match="cannot read the card"):
+            pages.Card(payload)
 
 
 def _image_page(width_px: int, height_px: int) -> bytes:
