@@ -660,15 +660,21 @@ def _drop_inner(matched: list[Read]) -> list[Read]:
 
 
 def _without_noise(matched: list[Read]) -> list[Read]:
-    """Drop punctuation and bare strokes with no word beside them: the modules of a QR code read as dots, dashes and bars.
+    """Drop module-sized punctuation with no word beside it: a code's modules read as dots.
 
     A glyph is beside the mark when it overlaps it vertically or shares its
     baseline: an underscore hangs below the letters around it.
+
+    Only a mark small enough to be a module of a code is judged this way. A
+    dash, a colon or a 1 set in text is that size in one direction at most,
+    and a cell holding nothing else is where a card puts them: a lone dash
+    in a tariff table says there is no tariff, and dropping it says nothing.
     """
     order = sorted(matched, key=lambda read: read.blob.x0)
     keep: list[Read] = []
     for i, read in enumerate(order):
-        if read.match.label not in NOISE and read.match.label not in STROKES:
+        speck = read.blob.height <= _MODULE and read.blob.width <= _MODULE
+        if not speck or (read.match.label not in NOISE and read.match.label not in STROKES):
             keep.append(read)
             continue
         em = read.match.template.em

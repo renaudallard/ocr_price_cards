@@ -212,3 +212,31 @@ def test_modules_of_two_widths_are_searched_in_the_order_they_are_sorted(
     assert matched == []
     assert unmatched == [away]
     assert sorted_input and all(sorted_input)
+
+
+def _mark(x0: int, y0: int, width: int, height: int) -> Blob:
+    import numpy as np
+
+    return Blob(
+        x0, y0, x0 + width, y0 + height, np.ones((height, width), np.float32), (255,) * 3, (0,) * 3
+    )
+
+
+def _read_of(blob: Blob, label: str, em: float = 21.0) -> Read:
+    template = Template(label, blob.patch, em, float(blob.height), 0.0, 0.0)
+    return Read(blob, [Match(label, 0.02, template)], [blob])
+
+
+def test_a_lone_stroke_in_a_cell_is_kept_and_a_speck_is_not() -> None:
+    from ocr_price_cards.reader import _without_noise
+
+    # Alone in a table cell with nothing within an em of it, as a card sets a
+    # dash meaning there is no tariff.
+    for label, width, height in (("-", 7, 2), ("1", 4, 14), (":", 2, 10), ("|", 2, 14)):
+        kept = _without_noise([_read_of(_mark(500, 100, width, height), label)])
+        assert len(kept) == 1, label
+    for label in (".", ","):
+        assert _without_noise([_read_of(_mark(500, 100, 2, 2), label)]) == []
+    # A scattering of module-sized dots, too few to cluster, still goes.
+    dots = [_read_of(_mark(200 + 7 * i, 300, 3, 3), ".") for i in range(6)]
+    assert _without_noise(dots) == []
