@@ -24,3 +24,14 @@ def test_templates_remember_how_many_marks_made_them(library: Library) -> None:
     parts = {t.label: t.parts for t in library.templates if t.label in ("i", "j", ":", "l", "n")}
     assert parts["i"] == 2 and parts["j"] == 2 and parts[":"] == 2
     assert parts["l"] == 1 and parts["n"] == 1
+
+
+def test_specimens_refuse_a_library_built_at_another_dpi(library: Library) -> None:
+    import pytest
+
+    from ocr_price_cards.train import train_specimens
+
+    assert train_specimens([], library=library) is library
+    assert train_specimens([], library=library, dpi=library.dpi) is library
+    with pytest.raises(ValueError, match="not 300"):
+        train_specimens([], library=library, dpi=300.0)
