@@ -117,3 +117,12 @@ def test_a_match_is_cached_per_size_window() -> None:
     second = _library()
     assert [m.label for m in second.match(short, size_tolerance=2)] == ["l", "I", "i"]
     assert second.match(short, size_tolerance=1) == []
+
+
+def test_a_library_cut_short_is_refused(tmp_path: Path) -> None:
+    path = tmp_path / "lib.npz"
+    _library().save(path)
+    raw = path.read_bytes()
+    path.write_bytes(raw[: len(raw) // 2])
+    with pytest.raises(LibraryError):
+        Library.load(path)
