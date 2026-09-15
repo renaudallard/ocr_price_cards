@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any
+from typing import Any, ClassVar
 
 import pytest
 
@@ -76,3 +76,25 @@ def test_a_card_closes_both_readers_even_if_the_first_will_not(
     with pytest.raises(RuntimeError):
         card.close()
     assert closed == ["pdfium"]
+
+
+def test_a_card_whose_readers_disagree_on_its_length_is_refused(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from ocr_price_cards.errors import OcrError
+
+    closed: list[str] = []
+
+    class Plumber:
+        pages: ClassVar[list[None]] = [None, None, None]
+
+        def close(self) -> None:
+            closed.append("plumber")
+
+    payload = Path("tmp/synthetic_text.pdf").read_bytes()
+    monkeypatch.setattr(pages.pdfplumber, "open", lambda _b: Plumber())
+    # The length comes from one reader and the pages from the other, so a
+    # card they read differently would lose a page or ask for a missing one.
+    with pytest.raises(OcrError, match="disagree on its length"):
+        pages.Card(payload)
+    assert closed == ["plumber"]

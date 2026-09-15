@@ -43,6 +43,8 @@ import pdfplumber
 import pypdfium2 as pdfium
 import pypdfium2.raw as pdfium_c
 
+from .errors import OcrError
+
 Pixels = npt.NDArray[np.uint8]
 
 DEFAULT_DPI = 216.0
@@ -117,6 +119,16 @@ class Card:
             # what the line above opened.
             self._document.close()
             raise
+        rendered, stated = len(self._document), len(self._plumber.pages)
+        if rendered != stated:
+            # The length is taken from one reader and the pages from the
+            # other, so a card they read differently would lose a page or
+            # ask for one that is not there. Say so instead.
+            self.close()
+            raise OcrError(
+                f"the card's readers disagree on its length: "
+                f"{rendered} page(s) to render, {stated} stated"
+            )
         self._chars: dict[int, list[TextChar]] = {}
 
     def __len__(self) -> int:
