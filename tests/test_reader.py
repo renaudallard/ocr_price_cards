@@ -142,3 +142,37 @@ def test_a_compound_settles_on_the_words_around_its_hyphen() -> None:
     assert settle([line], {"formule"}) == [(0, 0, 1, 1)]
     glyphs[0].alternatives = ("0",)
     assert settle([line], {"Online", "Flexy-formule"}) == []
+
+
+def test_a_refused_mark_is_left_out_of_the_text() -> None:
+    from ocr_price_cards.reader import _without_refused
+
+    def glyph(text: str, x0: float, box: tuple[int, int, int, int] | None) -> Glyph:
+        return Glyph(text, x0, x0 + 5.0, 100.0, 10.0, "image" if box else "text", box=box)
+
+    # A word whose first mark was refused, a line every mark of which was,
+    # and a character the PDF states, which carries no box and never goes.
+    word = Word([glyph("R", 0.0, (1, 1, 2, 2)), glyph("e", 5.0, (3, 1, 4, 2))])
+    stated = Word([glyph("A", 0.0, None)])
+    whole = Line([Word([glyph("x", 0.0, (9, 9, 10, 10))])])
+    lines = [Line([word, stated]), whole]
+    kept = _without_refused(lines, {(1, 1, 2, 2), (9, 9, 10, 10)})
+    assert [line.text for line in kept] == ["e A"]
+    assert _without_refused(lines, set()) is lines
+
+
+def test_a_refused_ambiguity_leaves_its_word_short(text_card: bytes) -> None:
+    trained = train([("card", text_card)], shifts=((0.0, 0.0),))
+    # Without a lexicon the capital I of Injectie is an I or an l and nothing
+    # settles it. It is refused after it has become a glyph, which is the
+    # refusal the text used to print anyway.
+    bare = Library(trained.dpi, trained.templates, set())
+    page = read_pdf(text_card, library=bare, embedded=False, text_layer=False, strict=False).pages[
+        0
+    ]
+    assert page.unread
+    refused = set(page.unread)
+    assert [g.text for word in page.words for g in word.glyphs if g.box in refused] == []
+    # The card sets the word at four sizes and the I is refused at some of
+    # them, so the short spelling is there beside the whole one.
+    assert "njectie:" in page.text
