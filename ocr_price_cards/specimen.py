@@ -142,12 +142,35 @@ def families(fonts: Iterable[EmbeddedFont]) -> dict[str, list[EmbeddedFont]]:
     return out
 
 
+def _read(data: bytes, offset: int, fmt: str) -> tuple[int, ...] | None:
+    """Unpack ``fmt`` at ``offset``, or None where the font does not reach.
+
+    A font program is read out of a PDF, so every offset and count in it is
+    whatever the file says. Nothing is taken on trust: a field that lies
+    outside the data reads as None and the font is left alone.
+    """
+    if offset < 0 or offset + struct.calcsize(fmt) > len(data):
+        return None
+    return struct.unpack_from(fmt, data, offset)
+
+
 def _tables(data: bytes) -> dict[bytes, tuple[int, int]]:
-    count = struct.unpack(">H", data[4:6])[0]
-    return {
-        data[12 + 16 * i : 16 + 16 * i]: struct.unpack(">II", data[20 + 16 * i : 28 + 16 * i])
-        for i in range(count)
-    }
+    """Each table's offset and length, by tag; empty when the directory does not hold up."""
+    count = _read(data, 4, ">H")
+    if count is None:
+        return {}
+    out: dict[bytes, tuple[int, int]] = {}
+    for i in range(count[0]):
+        # A record is the four byte tag, a checksum, then the offset and
+        # the length; reading the last two covers the tag that precedes them.
+        entry = _read(data, 20 + 16 * i, ">II")
+        if entry is None:
+            return {}
+        offset, length = entry
+        if offset + length > len(data):
+            return {}
+        out[data[12 + 16 * i : 16 + 16 * i]] = (offset, length)
+    return out
 
 
 def glyph_advances(data: bytes) -> dict[str, float]:
@@ -156,60 +179,69 @@ def glyph_advances(data: bytes) -> dict[str, float]:
     if any(name not in tables for name in (b"cmap", b"head", b"loca", b"hmtx", b"hhea", b"maxp")):
         return {}
     head = tables[b"head"][0]
-    units = struct.unpack(">H", data[head + 18 : head + 20])[0]
-    long_offsets = struct.unpack(">h", data[head + 50 : head + 52])[0] == 1
+    em = _read(data, head + 18, ">H")
+    indexing = _read(data, head + 50, ">h")
+    hhea = _read(data, tables[b"hhea"][0] + 34, ">H")
+    if em is None or indexing is None or hhea is None or em[0] == 0 or hhea[0] == 0:
+        return {}
+    units, metrics = em[0], hhea[0]
     loca_offset, loca_length = tables[b"loca"]
-    if long_offsets:
-        loca = struct.unpack(f">{loca_length // 4}I", data[loca_offset : loca_offset + loca_length])
-    else:
-        loca = tuple(
-            2 * v
-            for v in struct.unpack(
-                f">{loca_length // 2}H", data[loca_offset : loca_offset + loca_length]
-            )
-        )
-    hhea = tables[b"hhea"][0]
-    metrics = struct.unpack(">H", data[hhea + 34 : hhea + 36])[0]
+    wide = indexing[0] == 1
+    step = 4 if wide else 2
+    entries = loca_length // step
+    packed = _read(data, loca_offset, f">{entries}{'I' if wide else 'H'}")
+    if packed is None:
+        return {}
+    loca = packed if wide else tuple(2 * v for v in packed)
     hmtx = tables[b"hmtx"][0]
     out: dict[str, float] = {}
     for character, glyph in _cmap(data, tables).items():
         if glyph + 1 >= len(loca) or loca[glyph + 1] <= loca[glyph]:
             continue
-        row = min(glyph, metrics - 1)
-        advance = struct.unpack(">H", data[hmtx + 4 * row : hmtx + 4 * row + 2])[0]
-        out[character] = advance / units
+        advance = _read(data, hmtx + 4 * min(glyph, metrics - 1), ">H")
+        if advance is not None:
+            out[character] = advance[0] / units
     return out
 
 
 def _cmap(data: bytes, tables: dict[bytes, tuple[int, int]]) -> dict[str, int]:
     """Printable character to glyph index, from the font's format 4 Unicode cmap."""
     offset, _length = tables[b"cmap"]
-    subtables = struct.unpack(">H", data[offset + 2 : offset + 4])[0]
+    header = _read(data, offset + 2, ">H")
+    if header is None:
+        return {}
     found: dict[str, int] = {}
-    for i in range(subtables):
-        platform, encoding, start = struct.unpack(
-            ">HHI", data[offset + 4 + 8 * i : offset + 12 + 8 * i]
-        )
+    for i in range(header[0]):
+        record = _read(data, offset + 4 + 8 * i, ">HHI")
+        if record is None:
+            return found
+        platform, encoding, start = record
         if (platform, encoding) not in ((3, 1), (0, 3), (0, 4), (3, 10)):
             continue
         table = offset + start
-        if struct.unpack(">H", data[table : table + 2])[0] != 4:
+        fmt = _read(data, table, ">H")
+        count = _read(data, table + 6, ">H")
+        if fmt is None or count is None or fmt[0] != 4:
             continue
-        segments = struct.unpack(">H", data[table + 6 : table + 8])[0] // 2
-        ends = struct.unpack(f">{segments}H", data[table + 14 : table + 14 + 2 * segments])
+        segments = count[0] // 2
+        ends = _read(data, table + 14, f">{segments}H")
         starts_at = table + 16 + 2 * segments
-        starts = struct.unpack(f">{segments}H", data[starts_at : starts_at + 2 * segments])
+        starts = _read(data, starts_at, f">{segments}H")
         deltas_at = starts_at + 2 * segments
-        deltas = struct.unpack(f">{segments}h", data[deltas_at : deltas_at + 2 * segments])
+        deltas = _read(data, deltas_at, f">{segments}h")
         ranges_at = deltas_at + 2 * segments
-        ranges = struct.unpack(f">{segments}H", data[ranges_at : ranges_at + 2 * segments])
+        ranges = _read(data, ranges_at, f">{segments}H")
+        if ends is None or starts is None or deltas is None or ranges is None:
+            return found
         for k in range(segments):
             for code in range(starts[k], min(ends[k], 0xFFFE) + 1):
                 if ranges[k] == 0:
                     glyph = (code + deltas[k]) & 0xFFFF
                 else:
-                    at = ranges_at + 2 * k + ranges[k] + 2 * (code - starts[k])
-                    glyph = struct.unpack(">H", data[at : at + 2])[0]
+                    at = _read(data, ranges_at + 2 * k + ranges[k] + 2 * (code - starts[k]), ">H")
+                    if at is None:
+                        continue
+                    glyph = at[0]
                     if glyph:
                         glyph = (glyph + deltas[k]) & 0xFFFF
                 if glyph and chr(code).isprintable() and not chr(code).isspace():

@@ -77,3 +77,23 @@ def test_a_card_reads_through_specimens_of_its_own_font_alone(dejavu: bytes) -> 
     result = read_page(page, library, text_layer=False)
     assert result.text == TEXT
     assert not result.unread
+
+
+def test_a_font_that_does_not_hold_up_is_left_alone(dejavu: bytes) -> None:
+    import struct
+
+    from ocr_price_cards.specimen import _tables
+
+    assert len(glyph_advances(dejavu)) > 1000
+    tables = _tables(dejavu)
+    for field, offset in (
+        ("numberOfHMetrics", tables[b"hhea"][0] + 34),
+        ("unitsPerEm", tables[b"head"][0] + 18),
+    ):
+        zeroed = bytearray(dejavu)
+        struct.pack_into(">H", zeroed, offset, 0)
+        # Zero used to read the wrong bytes and hand back every advance as
+        # nought, or divide by it.
+        assert glyph_advances(bytes(zeroed)) == {}, field
+    for cut in (b"", b"\x00\x01\x00\x00", dejavu[:12], dejavu[: len(dejavu) // 2], dejavu[:-1]):
+        assert glyph_advances(cut) == {}
