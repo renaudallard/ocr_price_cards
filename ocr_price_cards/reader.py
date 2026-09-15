@@ -113,6 +113,7 @@ _MODULE = 5
 _DISPLAY = 2.0
 _WORDMARK_PART = 0.5
 _WORDMARK_SHARE = 0.25
+_WORDMARK_MIN = 6
 _TEXTURE_REACH = 3.0
 _STACK_OVERLAP = 0.5
 _STACK_SLACK = 0.2
@@ -717,6 +718,11 @@ def _without_wordmarks(rows: list[tuple[list[Read], list[Blob]]]) -> tuple[list[
     to look like some glyph the library holds and read, the rest read as
     nothing, and a row of display-sized marks a quarter of which read as
     nothing is such a wordmark, not a heading with one glyph refused.
+
+    A row has to hold enough marks for a quarter of them to mean anything. On
+    three or four, one that reads as nothing is already a quarter, and a short
+    heading, a month or a unit, would go the way of a logo without a word
+    said; below that count the row is left to be refused mark by mark.
     """
     heights = [read.blob.height for reads, _ in rows for read in reads]
     if not heights:
@@ -732,8 +738,11 @@ def _without_wordmarks(rows: list[tuple[list[Read], list[Blob]]]) -> tuple[list[
                 for blob in skipped
                 if blob.height >= _WORDMARK_PART * height and not _inside_any(blob, reads)
             ]
-            if height >= _DISPLAY * typical and len(marks) >= _WORDMARK_SHARE * (
-                len(reads) + len(marks)
+            total = len(reads) + len(marks)
+            if (
+                height >= _DISPLAY * typical
+                and total >= _WORDMARK_MIN
+                and len(marks) >= _WORDMARK_SHARE * total
             ):
                 continue
         matched.extend(reads)

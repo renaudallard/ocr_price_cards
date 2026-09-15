@@ -240,3 +240,24 @@ def test_a_lone_stroke_in_a_cell_is_kept_and_a_speck_is_not() -> None:
     # A scattering of module-sized dots, too few to cluster, still goes.
     dots = [_read_of(_mark(200 + 7 * i, 300, 3, 3), ".") for i in range(6)]
     assert _without_noise(dots) == []
+
+
+def test_a_short_heading_is_refused_rather_than_taken_for_a_wordmark() -> None:
+    from ocr_price_cards.reader import _without_wordmarks
+
+    body = [_read_of(_mark(10 + 9 * k, 200, 7, 11), "x") for k in range(40)]
+
+    def row(marks: int, refused: int) -> tuple[list[Read], list[Blob]]:
+        read = [_read_of(_mark(10 + 30 * k, 10, 24, 34), "A") for k in range(marks - refused)]
+        return read, [
+            _mark(10 + 30 * (marks - refused) + 30 * k, 10, 24, 34) for k in range(refused)
+        ]
+
+    for marks, refused in ((3, 1), (4, 1)):
+        matched, unmatched = _without_wordmarks([row(marks, refused), (body, [])])
+        assert sum(1 for r in matched if r.blob.height == 34) == marks - refused
+        assert len(unmatched) == refused
+    # A logo still goes: seven marks of which four read as nothing.
+    matched, unmatched = _without_wordmarks([row(7, 4), (body, [])])
+    assert not [r for r in matched if r.blob.height == 34]
+    assert unmatched == []
