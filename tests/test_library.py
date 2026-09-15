@@ -133,3 +133,12 @@ def test_bearings_follow_a_template_added_after_they_were_read() -> None:
     assert library.bearings("l", 21.0) == (0.05, 0.05)
     library.add(Template("l", _bar(16, 6), 21.0, 15.0, 0.15, 0.15, "Test"))
     assert library.bearings("l", 21.0) == pytest.approx((0.1, 0.1))
+
+
+def test_templates_that_differ_in_one_pixel_are_kept_apart() -> None:
+    library = _library()
+    held = len(library)
+    changed = _bar(16, 5)
+    changed[0, 1] = 0.0
+    library.add(Template("l", changed, 21.0, 15.0, 0.05, 0.05, "Test"))
+    assert len(library) == held + 1
