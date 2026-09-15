@@ -36,7 +36,7 @@ from .layout import Glyph, Line, Word
 from .library import Library, Template
 from .reader import Document, PageText, default_library, read_pdf
 
-__version__ = "0.1.0"
+__version__ = "0.2.0"
 
 
 def read_card(
