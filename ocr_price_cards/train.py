@@ -39,7 +39,7 @@ import numpy as np
 import numpy.typing as npt
 
 from .ink import Blob, Ink
-from .layout import Glyph, Word, build_rows, build_words
+from .layout import Glyph, build_rows, build_words
 from .library import Library, Template
 from .pages import DEFAULT_DPI, Card, Page, TextChar
 from .reader import MAX_GLYPH, PUNCTUATION, glyph_from_char
@@ -139,8 +139,9 @@ def harvest_words(
     words their shape, taken row by row as they were set rather than as
     pdfplumber chains the lines of a header cell into one; each glyph the
     reading is not sure of is settled by the character the text layer puts
-    at that place, and a word with a glyph that stays open or was refused is
-    not taken.
+    at that place, and a line on which anything was refused is not taken at
+    all: a refused mark leaves the text, so the word it sat in would come
+    back short and be learnt that way.
     """
     from .reader import read_page
 
@@ -151,11 +152,15 @@ def harvest_words(
                 page = card.page(index, dpi=library.dpi, embedded=False)
                 result = read_page(page, library, text_layer=False, strict=False)
                 zones = _char_zones(page)
-                glyphs = [glyph for word in result.words for glyph in word.glyphs]
+                glyphs = [
+                    glyph
+                    for line in result.lines
+                    if not line.unread
+                    for word in line.words
+                    for glyph in word.glyphs
+                ]
                 for word in (word for row in build_rows(glyphs) for word in row.words):
                     if not all(_settled(glyph, zones) for glyph in word.glyphs):
-                        continue
-                    if any(_touches(box, word) for box in result.unread):
                         continue
                     text = word.text.strip(PUNCTUATION)
                     if (
@@ -168,18 +173,6 @@ def harvest_words(
         if report is not None:
             report(f"{name}: {added} words added, {len(library.words)} in the lexicon")
     return added
-
-
-def _touches(box: tuple[int, int, int, int], word: Word) -> bool:
-    """Whether a refused mark lies within the pixels of a word."""
-    boxes = [glyph.box for glyph in word.glyphs if glyph.box is not None]
-    if not boxes:
-        return False
-    x0 = min(b[0] for b in boxes)
-    y0 = min(b[1] for b in boxes)
-    x1 = max(b[2] for b in boxes)
-    y1 = max(b[3] for b in boxes)
-    return min(x1, box[2]) > max(x0, box[0]) and min(y1, box[3]) > max(y0, box[1])
 
 
 def _char_zones(page: Page) -> list[tuple[float, float, float, float, str]]:

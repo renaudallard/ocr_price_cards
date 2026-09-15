@@ -35,3 +35,18 @@ def test_specimens_refuse_a_library_built_at_another_dpi(library: Library) -> No
     assert train_specimens([], library=library, dpi=library.dpi) is library
     with pytest.raises(ValueError, match="not 300"):
         train_specimens([], library=library, dpi=300.0)
+
+
+def test_a_line_with_a_refusal_gives_the_lexicon_nothing(
+    text_card: bytes, library: Library
+) -> None:
+    from ocr_price_cards.train import train
+
+    trained = train([("card", text_card)], shifts=((0.0, 0.0),))
+    # Without a lexicon the I of Injectie is refused, and a refused mark
+    # leaves the text, so the word reads back short. Learning that spelling
+    # would put it in the lexicon for every card after.
+    bare = Library(trained.dpi, trained.templates, set())
+    harvest_words([("card", text_card)], bare)
+    assert "Injectie" in bare.words
+    assert "njectie" not in bare.words
