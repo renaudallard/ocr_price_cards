@@ -50,7 +50,6 @@ _Stack = tuple[
     npt.NDArray[np.float32],
     npt.NDArray[np.float32],
     npt.NDArray[np.float32],
-    npt.NDArray[np.float32],
 ]
 _Key = tuple[tuple[int, ...], bytes, tuple[float, float] | None, int]
 """What a match is cached under: the patch, the font sizes asked for and the size window."""
@@ -124,6 +123,7 @@ class Library:
     words: set[str] = field(default_factory=set)
     _by_size: dict[tuple[int, int], list[int]] = field(default_factory=dict, repr=False)
     _stacks: dict[tuple[int, int], _Stack] = field(default_factory=dict, repr=False)
+    _blurs: dict[tuple[int, int], Patch] = field(default_factory=dict, repr=False)
     _keys: dict[tuple[str, tuple[int, ...], bytes], int] = field(default_factory=dict, repr=False)
     _bearings: dict[tuple[str, float], tuple[float, float]] = field(
         default_factory=dict, repr=False
@@ -164,6 +164,7 @@ class Library:
         size = (template.height, template.width)
         self._by_size.setdefault(size, []).append(len(self.templates) - 1)
         self._stacks.pop(size, None)
+        self._blurs.pop(size, None)
         self._bearings.clear()
         self._cache.clear()
         return template
@@ -226,7 +227,7 @@ class Library:
                 indices = self._by_size.get((th, tw))
                 if not indices:
                     continue
-                stack, masses, ems, blurred = self._stack((th, tw))
+                stack, masses, ems = self._stack((th, tw))
                 near = np.abs(masses - mass) <= MASS_TOLERANCE * np.maximum(masses, mass)
                 if em is not None:
                     near &= (ems >= em[0]) & (ems <= em[1])
@@ -244,6 +245,7 @@ class Library:
                     if blur is None:
                         blur = _blur(padded)
                     soft = blur[top : top + th, left : left + tw]
+                    blurred = self._blurred((th, tw), stack)
                     rough = np.abs(blurred[chosen] - soft).sum(axis=(1, 2))
                     order = np.argsort(rough)
                     keep = list(order[:SHORTLIST])
@@ -282,10 +284,22 @@ class Library:
             patches = np.stack([self.templates[i].patch for i in self._by_size[size]])
             masses = patches.sum(axis=(1, 2)).astype(np.float32)
             ems = np.array([self.templates[i].em for i in self._by_size[size]], dtype=np.float32)
-            blurred = np.stack([_blur(patch) for patch in patches])
-            stack = (patches, masses, ems, blurred)
+            stack = (patches, masses, ems)
             self._stacks[size] = stack
         return stack
+
+    def _blurred(self, size: tuple[int, int], patches: Patch) -> Patch:
+        """The templates of one size blurred, built the first time a size shortlists.
+
+        Only a size holding more candidates than the shortlist is ever ranked
+        this way, and most sizes hold far fewer, so blurring them all as the
+        stack is built is work and memory for nothing.
+        """
+        blurred = self._blurs.get(size)
+        if blurred is None:
+            blurred = np.stack([_blur(patch) for patch in patches])
+            self._blurs[size] = blurred
+        return blurred
 
     def save(self, path: Path) -> None:
         """Write the library as a compressed npz file."""
