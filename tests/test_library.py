@@ -104,3 +104,16 @@ def test_the_shipped_library_loads_and_covers_the_figures() -> None:
     assert library.dpi == 216.0
     assert set("0123456789,.€") <= library.labels()
     assert "Fluvius" in library.words
+
+
+def test_a_match_is_cached_per_size_window() -> None:
+    # Two pixels short of the 16x5 templates: out of reach at one pixel of
+    # tolerance, in reach at two. Whichever search runs first, the other
+    # must still get its own answer.
+    short = _bar(14, 5)
+    first = _library()
+    assert first.match(short, size_tolerance=1) == []
+    assert [m.label for m in first.match(short, size_tolerance=2)] == ["l", "I", "i"]
+    second = _library()
+    assert [m.label for m in second.match(short, size_tolerance=2)] == ["l", "I", "i"]
+    assert second.match(short, size_tolerance=1) == []
