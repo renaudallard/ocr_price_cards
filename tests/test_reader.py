@@ -176,3 +176,39 @@ def test_a_refused_ambiguity_leaves_its_word_short(text_card: bytes) -> None:
     # The card sets the word at four sizes and the I is refused at some of
     # them, so the short spelling is there beside the whole one.
     assert "njectie:" in page.text
+
+
+def test_modules_of_two_widths_are_searched_in_the_order_they_are_sorted(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import numpy as np
+
+    import ocr_price_cards.reader as reader
+
+    def blob(x0: int, y0: int, width: int) -> Blob:
+        return Blob(
+            x0, y0, x0 + width, y0 + 3, np.ones((3, width), np.float32), (255,) * 3, (0,) * 3
+        )
+
+    sorted_input: list[bool] = []
+    real = np.searchsorted
+
+    def checked(a: object, v: object, **kw: object) -> object:
+        sorted_input.append(bool(np.all(np.diff(np.asarray(a)) >= 0)))
+        return real(a, v, **kw)  # type: ignore[arg-type]
+
+    monkeypatch.setattr(reader.np, "searchsorted", checked)
+    # Marks cut from a code are not all one width, and where a wide one
+    # starts just before a narrow one their centres fall in the opposite
+    # order to their left edges.
+    grid = [
+        blob(9 * c + (0 if wide else 1), 7 * r, 5 if wide else 1)
+        for r in range(4)
+        for c in range(4)
+        for wide in (True, False)
+    ]
+    away = blob(900, 7, 4)
+    matched, unmatched = _without_texture([], [*grid, away])
+    assert matched == []
+    assert unmatched == [away]
+    assert sorted_input and all(sorted_input)
