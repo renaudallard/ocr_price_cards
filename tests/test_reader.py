@@ -273,3 +273,20 @@ def test_a_caption_against_a_code_keeps_its_first_letter() -> None:
         matched, _ = _without_texture(code + word, [])
         assert "".join(r.match.label for r in matched if r.match.label != ".") == "kWh"
         assert not [r for r in matched if r.match.label == "."]
+
+
+def test_read_card_takes_the_same_arguments_as_read_pdf() -> None:
+    import inspect
+
+    from ocr_price_cards import read_card
+
+    # Spelled out rather than **options, so a caller who writes strict="no"
+    # hears about it instead of having the string read as true.
+    # eval_str because reader.py postpones its annotations and __init__ does not
+    card = inspect.signature(read_card, eval_str=True).parameters
+    pdf = inspect.signature(read_pdf, eval_str=True).parameters
+    assert set(card) == set(pdf)
+    for name, param in pdf.items():
+        assert card[name].annotation == param.annotation, name
+        assert card[name].default == param.default, name
+        assert card[name].kind == param.kind, name

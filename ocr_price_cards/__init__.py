@@ -39,9 +39,24 @@ from .reader import Document, PageText, default_library, read_pdf
 __version__ = "0.1.0"
 
 
-def read_card(payload: bytes, **options: object) -> str:
-    """The text of a card, shaped like pdfplumber's ``extract_text()`` page after page."""
-    return read_pdf(payload, **options).text  # type: ignore[arg-type]
+def read_card(
+    payload: bytes,
+    *,
+    library: Library | None = None,
+    embedded: bool = True,
+    text_layer: bool = True,
+    strict: bool = True,
+) -> str:
+    """The text of a card, shaped like pdfplumber's ``extract_text()`` page after page.
+
+    The arguments are :func:`read_pdf`'s, spelled out rather than passed on as
+    keywords of any type: the package ships typed, and a caller who writes
+    ``strict="no"`` should hear about it rather than have the string read as
+    true.
+    """
+    return read_pdf(
+        payload, library=library, embedded=embedded, text_layer=text_layer, strict=strict
+    ).text
 
 
 __all__ = [
