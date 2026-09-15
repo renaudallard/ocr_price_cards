@@ -208,7 +208,12 @@ def build_rows(glyphs: list[Glyph]) -> list[Line]:
         by_run: dict[int, list[Glyph]] = {}
         for glyph in by_line[line]:
             by_run.setdefault(runs[glyph.baseline], []).append(glyph)
-        rows.extend(Line(_words(by_run[run])) for run in sorted(by_run))
+        for run in sorted(by_run):
+            # A run of nothing but spaces makes no words, and a line with
+            # no words has no top to be asked for.
+            words = _words(by_run[run])
+            if words:
+                rows.append(Line(words))
     return rows
 
 

@@ -80,3 +80,15 @@ def test_rows_keep_the_two_lines_of_a_cell_apart_where_lines_chain_them() -> Non
     glyphs = upper + lower
     assert len(build_lines(glyphs)) == 1
     assert [word.text for row in build_rows(glyphs) for word in row.words] == ["Totaal", "kWh"]
+
+
+def test_a_row_of_nothing_but_spaces_makes_no_line() -> None:
+    spaces = [Glyph(" ", 10.0 + 4.0 * i, 14.0 + 4.0 * i, 100.0, 7.0, "text") for i in range(3)]
+    words = [
+        Glyph(c, 10.0 + 4.0 * i, 14.0 + 4.0 * i, 130.0, 7.0, "text") for i, c in enumerate("kWh")
+    ]
+    rows = build_rows(spaces + words)
+    assert [line.text for line in rows] == ["kWh"]
+    # A line with no words has no top, so there must not be one.
+    assert all(line.words for line in rows)
+    assert [round(line.top, 2) for line in rows] == [124.75]
