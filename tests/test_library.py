@@ -126,3 +126,10 @@ def test_a_library_cut_short_is_refused(tmp_path: Path) -> None:
     path.write_bytes(raw[: len(raw) // 2])
     with pytest.raises(LibraryError):
         Library.load(path)
+
+
+def test_bearings_follow_a_template_added_after_they_were_read() -> None:
+    library = _library()
+    assert library.bearings("l", 21.0) == (0.05, 0.05)
+    library.add(Template("l", _bar(16, 6), 21.0, 15.0, 0.15, 0.15, "Test"))
+    assert library.bearings("l", 21.0) == pytest.approx((0.1, 0.1))
