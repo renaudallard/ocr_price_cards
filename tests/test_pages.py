@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from pathlib import Path
 from typing import Any
 
 import pytest
@@ -57,3 +58,21 @@ def test_a_page_image_squashed_one_way_is_rendered_rather_than_read() -> None:
     # be matched against templates twice their height.
     with pages.Card(_image_page(1785, 1263)) as card:
         assert card.page(0, dpi=216.0).source == "render"
+
+
+def test_a_card_closes_both_readers_even_if_the_first_will_not(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    from pathlib import Path as P
+
+    closed: list[str] = []
+    card = pages.Card(P("tmp/synthetic_text.pdf").read_bytes())
+
+    def refuse() -> None:
+        raise RuntimeError("pdfplumber will not close")
+
+    monkeypatch.setattr(card._plumber, "close", refuse)
+    monkeypatch.setattr(card._document, "close", lambda: closed.append("pdfium"))
+    with pytest.raises(RuntimeError):
+        card.close()
+    assert closed == ["pdfium"]

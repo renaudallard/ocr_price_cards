@@ -123,8 +123,12 @@ class Card:
         return len(self._plumber.pages)
 
     def close(self) -> None:
-        self._plumber.close()
-        self._document.close()
+        # Both get closed even if the first will not: the card holds two
+        # readers of the same bytes and neither is the other's business.
+        try:
+            self._plumber.close()
+        finally:
+            self._document.close()
 
     def __enter__(self) -> Card:
         return self
