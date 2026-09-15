@@ -40,7 +40,7 @@ import numpy.typing as npt
 
 from .ink import Blob, Ink
 from .layout import Glyph, build_rows, build_words
-from .library import Library, Template
+from .library import Library, Template, quantize
 from .pages import DEFAULT_DPI, Card, Page, TextChar
 from .reader import MAX_GLYPH, PUNCTUATION, glyph_from_char
 from .specimen import Specimen
@@ -366,7 +366,7 @@ def _template(
     label = "".join(chars[i].text for i in owners)
     return Template(
         label,
-        union.patch,
+        quantize(union.patch),
         em,
         base - union.y0,
         (union.x0 - left) / em,

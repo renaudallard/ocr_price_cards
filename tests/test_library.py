@@ -8,7 +8,7 @@ import numpy as np
 import pytest
 
 from ocr_price_cards.errors import LibraryError
-from ocr_price_cards.library import Library, Template
+from ocr_price_cards.library import Library, Template, quantize
 from ocr_price_cards.reader import ACCEPT, decide
 
 
@@ -142,3 +142,18 @@ def test_templates_that_differ_in_one_pixel_are_kept_apart() -> None:
     changed[0, 1] = 0.0
     library.add(Template("l", changed, 21.0, 15.0, 0.05, 0.05, "Test"))
     assert len(library) == held + 1
+
+
+def test_a_template_keeps_its_pixels_as_bytes() -> None:
+    # A byte a pixel is all they ever carried, and holding them in four
+    # cost the shipped library three hundred megabytes.
+    library = _library()
+    assert all(t.patch.dtype == np.uint8 for t in library.templates)
+    # Built from a patch of either kind, and the same either way.
+    floats = _bar(16, 5)
+    built = Template("l", floats, 21.0, 15.0, 0.05, 0.05)
+    assert built.patch.dtype == np.uint8
+    assert np.array_equal(built.patch, quantize(floats))
+    assert Template("l", quantize(floats), 21.0, 15.0, 0.05, 0.05).patch.dtype == np.uint8
+    # The search still works in floats: an exact match scores zero.
+    assert library.match(floats)[0].score == 0.0

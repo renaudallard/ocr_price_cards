@@ -34,9 +34,9 @@ card with one.
 
 It reads a Raspberry Pi 4 page in well under a minute; there is no neural
 network, no model download and no C extension, only numpy, pypdfium2 and
-pdfplumber. The shipped library is 66720 templates and takes about 490 MB
-of memory once loaded, so a reader holds half a gigabyte for as long as it
-keeps one.
+pdfplumber. The shipped library is 66720 templates and takes about 180 MB
+of memory once loaded, which a reader holds for as long as it keeps one;
+reading a page needs about as much again, for the sizes it touches.
 
 ## How it reads
 

@@ -38,6 +38,7 @@ import json
 import zipfile
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import cast
 
 import numpy as np
 import numpy.typing as npt
@@ -46,6 +47,8 @@ from numpy.lib.stride_tricks import sliding_window_view
 from .errors import LibraryError
 
 Patch = npt.NDArray[np.float32]
+Stored = npt.NDArray[np.uint8]
+"""A template's pixels as they are kept: quantized, which is all they ever carried."""
 _Stack = tuple[
     npt.NDArray[np.float32],
     npt.NDArray[np.float32],
@@ -73,10 +76,14 @@ class Template:
     of the patch down to the baseline, ``lsb`` and ``rsb`` the gaps between the
     ink and the advance box on either side as fractions of the em, and
     ``parts`` how many separate marks the glyph was made of, two for an i.
+
+    ``patch`` is kept quantized. It is set from a patch of any kind when the
+    template is added, and it is the one the size stack is built from; holding
+    a byte a pixel in four bytes bought nothing.
     """
 
     label: str
-    patch: Patch
+    patch: Stored
     em: float
     base: float
     lsb: float
@@ -84,6 +91,9 @@ class Template:
     font: str = ""
     count: int = 1
     parts: int = 1
+
+    def __post_init__(self) -> None:
+        self.patch = quantize(self.patch)
 
     @property
     def height(self) -> int:
@@ -145,8 +155,9 @@ class Library:
         pixels themselves: keeping the pixels twice costs as much as the
         library does. A digest that matches is still checked against the
         patch it stands for, so the fold is on the pixels as before.
+
         """
-        quantized = quantize(template.patch)
+        quantized = template.patch
         key = (
             template.label,
             quantized.shape,
@@ -155,10 +166,10 @@ class Library:
         index = self._keys.get(key)
         if index is not None:
             held = self.templates[index]
-            if np.array_equal(quantize(held.patch), quantized):
+            if np.array_equal(held.patch, quantized):
                 held.count += template.count
                 return held
-        template.patch = quantized.astype(np.float32) / 255.0
+        template.patch = quantized
         self._keys[key] = len(self.templates)
         self.templates.append(template)
         size = (template.height, template.width)
@@ -281,7 +292,10 @@ class Library:
     def _stack(self, size: tuple[int, int]) -> _Stack:
         stack = self._stacks.get(size)
         if stack is None:
-            patches = np.stack([self.templates[i].patch for i in self._by_size[size]])
+            # The one place the stored bytes become the floats the search
+            # works in, once per size and only for a size that is asked for.
+            stored = np.stack([self.templates[i].patch for i in self._by_size[size]])
+            patches = stored.astype(np.float32) / 255.0
             masses = patches.sum(axis=(1, 2)).astype(np.float32)
             ems = np.array([self.templates[i].em for i in self._by_size[size]], dtype=np.float32)
             stack = (patches, masses, ems)
@@ -307,7 +321,7 @@ class Library:
             raise LibraryError("nothing to save: the library is empty")
         heights = np.array([t.height for t in self.templates], dtype=np.int32)
         widths = np.array([t.width for t in self.templates], dtype=np.int32)
-        data = np.concatenate([quantize(t.patch).reshape(-1) for t in self.templates])
+        data = np.concatenate([t.patch.reshape(-1) for t in self.templates])
         np.savez_compressed(
             path,
             format=np.int32(FORMAT),
@@ -353,7 +367,7 @@ class Library:
         offset = 0
         for index, label in enumerate(labels):
             h, w = int(heights[index]), int(widths[index])
-            patch = data[offset : offset + h * w].reshape(h, w).astype(np.float32) / 255.0
+            patch = data[offset : offset + h * w].reshape(h, w)
             offset += h * w
             templates.append(
                 Template(
@@ -383,6 +397,9 @@ def _blur(patch: Patch) -> Patch:
     return out / 9.0
 
 
-def quantize(patch: Patch) -> npt.NDArray[np.uint8]:
-    quantized: npt.NDArray[np.uint8] = np.clip(np.rint(patch * 255.0), 0, 255).astype(np.uint8)
+def quantize(patch: Patch | Stored) -> Stored:
+    """A patch as the bytes a template keeps; one that is already those is given back as it is."""
+    if patch.dtype == np.uint8:
+        return cast(Stored, patch)
+    quantized: Stored = np.clip(np.rint(patch * 255.0), 0, 255).astype(np.uint8)
     return quantized
