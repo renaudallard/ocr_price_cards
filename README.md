@@ -1,7 +1,8 @@
 # ocr_price_cards
 
-Reads Belgian electricity and water tariff cards that are published as page
-images, for [homeassistant_be_electricity_prices](https://github.com/renaudallard/homeassistant_be_electricity_prices)
+Reads Belgian electricity, gas and water tariff cards that are published as
+page images, for [homeassistant_be_electricity_prices](https://github.com/renaudallard/homeassistant_be_electricity_prices),
+[homeassistant_be_gas_prices](https://github.com/renaudallard/homeassistant_be_gas_prices)
 and [homeassistant_be_water_prices](https://github.com/renaudallard/homeassistant_be_water_prices).
 The cards themselves are kept in [be_price_cards](https://github.com/renaudallard/be_price_cards).
 
@@ -32,11 +33,11 @@ card with one.
   painted onto the image first. Any other page is rendered with pdfium.
 - Every word says where it came from: `text`, `image` or `mixed`.
 
-It reads a Raspberry Pi 4 page in well under a minute; there is no neural
-network, no model download and no C extension, only numpy, pypdfium2 and
-pdfplumber. The shipped library is 66720 templates and takes about 180 MB
-of memory once loaded, which a reader holds for as long as it keeps one;
-reading a page needs about as much again, for the sizes it touches.
+It reads a Raspberry Pi 4 page in about a minute and a half; there is no
+neural network, no model download and no C extension, only numpy, pypdfium2
+and pdfplumber. The shipped library is 96200 templates and takes about
+260 MB of memory once loaded, which a reader holds for as long as it keeps
+one; reading a five-page card peaks just under 1 GB.
 
 ## How it reads
 
@@ -100,9 +101,16 @@ Python 3.14 or later.
     pip install .
 
 The package ships the library for the Ecofix cards: the Product Sans faces
-they embed, learnt from the May 2026 cards that still carry a text layer
-and set again at every size from 4 to 36 points, with the lexicon of the
-words those cards spell. `read_card` uses it unless given another.
+they embed, learnt from the cards that still carry a text layer and set
+again at every size from 4 to 36 points, with the lexicon of the words those
+cards spell. The electricity cards are those of May 2026; the gas cards are
+the Dutch ones the Wayback Machine kept, Flexy of July 2025 and January 2026
+and Flexy Online of July 2025, January and February 2026, which set the
+formula, the headings and the table headers in bold. The French cards are
+left out: training on one shifted a bold `e` far enough that an `e` of a
+two-line electricity header cell read as `é`, and the Dutch card of each
+product carries the same tables. `read_card` uses the library unless given
+another.
 
 ## Use
 
@@ -203,6 +211,9 @@ the ambiguity threshold.
 - Lines are pdfplumber's lines, with what that entails: two lines of a small
   table cell a few points apart chain into one, exactly as `extract_text()`
   chains them on a card with a text layer.
+- Bold 4, 7, 8 and 9, and bold Q, X, Y and Z, are not in the library: no
+  card it learnt from sets them in bold. A gas formula whose figures use one
+  of those digits is refused until a card that sets it has been learnt.
 - A page image that is a stale month's card stays stale: the reader says
   what the pixels say. Whether a figure read off the image is current is for
   the caller to decide.
