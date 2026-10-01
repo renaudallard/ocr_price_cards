@@ -33,11 +33,11 @@ card with one.
   painted onto the image first. Any other page is rendered with pdfium.
 - Every word says where it came from: `text`, `image` or `mixed`.
 
-It reads a Raspberry Pi 4 page in about a minute and a half; there is no
-neural network, no model download and no C extension, only numpy, pypdfium2
-and pdfplumber. The shipped library is 96200 templates and takes about
-260 MB of memory once loaded, which a reader holds for as long as it keeps
-one; reading a five-page card peaks just under 1 GB.
+It reads a Raspberry Pi 4 page in under two minutes; there is no neural
+network, no model download and no C extension, only numpy, pypdfium2 and
+pdfplumber. The shipped library is 139947 templates and takes about 370 MB
+of memory once loaded, which a reader holds for as long as it keeps one;
+reading a five-page card peaks at about 1.3 GB.
 
 ## How it reads
 
@@ -112,10 +112,12 @@ cards spell. The electricity cards are those of May 2026; the gas cards are
 the Dutch ones the Wayback Machine kept, Flexy of July 2025 and January 2026
 and Flexy Online of July 2025, January and February 2026, which set the
 formula, the headings and the table headers in bold. The French cards are
-left out: training on one shifted a bold `e` far enough that an `e` of a
-two-line electricity header cell read as `é`, and the Dutch card of each
-product carries the same tables. `read_card` uses the library unless given
-another.
+the electricity Flexy and the gas Flexy of April 2026, which the Wayback
+Machine also kept, for the French accents, the apostrophe, the `q` and the
+em dash that the Dutch cards it learnt from do not set. Eight templates
+their training cut from an `s` together with the ornament above it were
+taken out by hand: their side bearings put a space after every `s` of the
+body text. `read_card` uses the library unless given another.
 
 ## Use
 
@@ -219,6 +221,11 @@ the ambiguity threshold.
 - Bold 4, 7, 8 and 9, and bold Q, X, Y and Z, are not in the library: no
   card it learnt from sets them in bold. A gas formula whose figures use one
   of those digits is refused until a card that sets it has been learnt.
+- The French page images do not read as reliably as the Dutch ones. The
+  French glyphs were learnt from two cards rendered by pdfium, and on the
+  September French page images some lines read wrong without a refusal: an
+  `é` or an apostrophe lost, or an apostrophe set on a line of its own. The
+  integrations read the Dutch cards.
 - A page image that is a stale month's card stays stale: the reader says
   what the pixels say. Whether a figure read off the image is current is for
   the caller to decide.
