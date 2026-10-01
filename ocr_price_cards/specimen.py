@@ -48,6 +48,7 @@ from pdfminer.pdfpage import PDFPage
 from pdfminer.pdfparser import PDFParser
 from pdfminer.pdftypes import resolve1
 
+from .library import Library
 from .pages import TextChar
 
 CHARACTERS: frozenset[str] = frozenset(
@@ -132,6 +133,29 @@ def embedded_fonts(payload: bytes) -> list[EmbeddedFont]:
         if advances:
             out.append(EmbeddedFont(name, data, advances))
     return out
+
+
+def unlearnt(payload: bytes, library: Library) -> dict[str, str]:
+    """The characters each font ``payload`` embeds that ``library`` holds no template of in that font.
+
+    Only a font the library has learnt from is looked at, under its family
+    name, whatever subset it came from: a card in another supplier's fonts
+    is for another library, not a gap in this one. Only the characters a
+    specimen sets are counted, since those are what a specimen of the font
+    would teach.
+    """
+    held: dict[str, set[str]] = {}
+    for template in library.templates:
+        held.setdefault(template.font.split("+")[-1], set()).add(template.label)
+    out: dict[str, set[str]] = {}
+    for font in embedded_fonts(payload):
+        labels = held.get(font.name)
+        if labels is None:
+            continue
+        missing = (set(font.characters) & CHARACTERS) - labels
+        if missing:
+            out.setdefault(font.name, set()).update(missing)
+    return {name: "".join(sorted(chars)) for name, chars in sorted(out.items())}
 
 
 def families(fonts: Iterable[EmbeddedFont]) -> dict[str, list[EmbeddedFont]]:

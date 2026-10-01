@@ -177,6 +177,14 @@ without any doubt. The text layer is what the lexicon is first built from,
 but where a card overprints its table headers the text layer comes out
 scrambled while the pixels read cleanly.
 
+    ocr-price-cards unlearnt card.pdf ...
+
+lists, for every font a card embeds that the library has learnt from, the
+characters the font draws that the library holds no template of in that
+font, and exits 1 when there are any. A card published as a page image
+still embeds the fonts of the text set over it, so such a card is one
+`specimen` can teach those characters from.
+
 ## Checking a library
 
     ocr-price-cards check card.pdf ...
@@ -221,7 +229,8 @@ the ambiguity threshold.
   chains them on a card with a text layer.
 - Bold 4, 7, 8 and 9, and bold Q, X, Y and Z, are not in the library: no
   card it learnt from sets them in bold. A gas formula whose figures use one
-  of those digits is refused until a card that sets it has been learnt.
+  of those digits is refused until a card that sets it has been learnt;
+  `ocr-price-cards unlearnt` says when a card embeds one.
 - The French page images do not read as reliably as the Dutch ones. The
   French glyphs were learnt from two cards rendered by pdfium, and on the
   September French page images some lines read wrong without a refusal: an

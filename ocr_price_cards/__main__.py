@@ -39,7 +39,7 @@ from .layout import build_lines, text_of
 from .library import Library
 from .pages import DEFAULT_DPI, load_pages
 from .reader import Document, default_library, glyph_from_char, read_page, read_pdf
-from .specimen import specimens
+from .specimen import specimens, unlearnt
 from .train import SUBPIXEL, harvest_words, train, train_specimens
 
 
@@ -101,6 +101,14 @@ def main(argv: Sequence[str] | None = None) -> int:
     words.add_argument("library", type=Path)
     words.add_argument("cards", type=Path, nargs="+")
     words.set_defaults(func=_words)
+
+    gaps = commands.add_parser(
+        "unlearnt",
+        help="list the characters cards embed in a known font that the library has not learnt",
+    )
+    gaps.add_argument("cards", type=Path, nargs="+")
+    gaps.add_argument("--library", type=Path)
+    gaps.set_defaults(func=_unlearnt)
 
     check = commands.add_parser(
         "check", help="read cards from pixels alone and compare with their text layer"
@@ -214,6 +222,16 @@ def _specimen(args: argparse.Namespace) -> int:
     library.save(args.library)
     print(f"{args.library}: {len(library)} templates, {len(library.labels())} labels")
     return 0
+
+
+def _unlearnt(args: argparse.Namespace) -> int:
+    library = _library(args.library)
+    found = 0
+    for card in args.cards:
+        for font, chars in unlearnt(card.read_bytes(), library).items():
+            print(f"{card}: {font}: {chars}")
+            found += 1
+    return 1 if found else 0
 
 
 def _words(args: argparse.Namespace) -> int:

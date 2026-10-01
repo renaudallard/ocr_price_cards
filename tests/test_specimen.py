@@ -6,14 +6,22 @@ import ctypes
 from io import BytesIO
 from pathlib import Path
 
+import numpy as np
 import pypdfium2 as pdfium
 import pypdfium2.raw as pdfium_c
 import pytest
 from conftest import pages_of
 
-from ocr_price_cards.library import Library
+from ocr_price_cards.library import Library, Template
 from ocr_price_cards.reader import read_page
-from ocr_price_cards.specimen import CHARACTERS, embedded_fonts, glyph_advances, specimen, specimens
+from ocr_price_cards.specimen import (
+    CHARACTERS,
+    embedded_fonts,
+    glyph_advances,
+    specimen,
+    specimens,
+    unlearnt,
+)
 from ocr_price_cards.train import train_specimens
 
 FONT = Path("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf")
@@ -97,3 +105,23 @@ def test_a_font_that_does_not_hold_up_is_left_alone(dejavu: bytes) -> None:
         assert glyph_advances(bytes(zeroed)) == {}, field
     for cut in (b"", b"\x00\x01\x00\x00", dejavu[:12], dejavu[: len(dejavu) // 2], dejavu[:-1]):
         assert glyph_advances(cut) == {}
+
+
+def test_a_card_says_which_characters_of_a_known_font_are_unlearnt(dejavu: bytes) -> None:
+    card = _card_with_embedded_font(dejavu, TEXT, 9.0)
+    font = embedded_fonts(card)[0]
+    covered = "".join(sorted(set(font.characters) & CHARACTERS))
+    known = covered[: len(covered) // 2]
+
+    def library(name: str, labels: str) -> Library:
+        patch = np.ones((4, 2), np.float32)
+        return Library(216.0, [Template(c, patch, 21.0, 4.0, 0.0, 0.0, name) for c in labels])
+
+    # Learnt from a card, a template carries the subset's tag; the family is
+    # what counts.
+    assert unlearnt(card, library("ABCDEF+" + font.name, known)) == {
+        font.name: covered[len(known) :]
+    }
+    assert unlearnt(card, library(font.name, covered)) == {}
+    # A font the library never learnt from is another library's business.
+    assert unlearnt(card, library("ProductSans-Bold", known)) == {}
