@@ -35,6 +35,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import sys
 import zipfile
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -132,9 +133,11 @@ class Library:
     templates: list[Template] = field(default_factory=list)
     words: set[str] = field(default_factory=set)
     _by_size: dict[tuple[int, int], list[int]] = field(default_factory=dict, repr=False)
+    _blocks: dict[tuple[int, int], Stored] = field(default_factory=dict, repr=False)
     _stacks: dict[tuple[int, int], _Stack] = field(default_factory=dict, repr=False)
     _blurs: dict[tuple[int, int], Patch] = field(default_factory=dict, repr=False)
     _keys: dict[tuple[str, tuple[int, ...], bytes], int] = field(default_factory=dict, repr=False)
+    _indexed: bool = field(default=True, repr=False)
     _bearings: dict[tuple[str, float], tuple[float, float]] = field(
         default_factory=dict, repr=False
     )
@@ -157,12 +160,10 @@ class Library:
         patch it stands for, so the fold is on the pixels as before.
 
         """
+        if not self._indexed:
+            self._index()
         quantized = template.patch
-        key = (
-            template.label,
-            quantized.shape,
-            hashlib.blake2b(quantized.tobytes(), digest_size=16).digest(),
-        )
+        key = _key(template)
         index = self._keys.get(key)
         if index is not None:
             held = self.templates[index]
@@ -174,11 +175,19 @@ class Library:
         self.templates.append(template)
         size = (template.height, template.width)
         self._by_size.setdefault(size, []).append(len(self.templates) - 1)
+        self._blocks.pop(size, None)
         self._stacks.pop(size, None)
         self._blurs.pop(size, None)
         self._bearings.clear()
         self._cache.clear()
         return template
+
+    def _index(self) -> None:
+        """Index the templates by their pixels, which only adding one asks for."""
+        self._keys = {}
+        for index, template in enumerate(self.templates):
+            self._keys.setdefault(_key(template), index)
+        self._indexed = True
 
     def bearings(self, label: str, em: float) -> tuple[float, float]:
         """The side bearings of ``label`` at ``em``, in ems, as the mean over its templates.
@@ -292,12 +301,17 @@ class Library:
     def _stack(self, size: tuple[int, int]) -> _Stack:
         """The templates of one size as bytes, with their ink masses and font sizes.
 
-        The search converts to floats just the templates it compares, so a
-        size costs its bytes and not four times as much.
+        A loaded library already holds each size as one block, and the
+        templates' pixels are views into it; only a size a template was added
+        to since is gathered afresh. The search converts to floats just the
+        templates it compares, so a size costs its bytes and not four times
+        as much.
         """
         stack = self._stacks.get(size)
         if stack is None:
-            stored = np.stack([self.templates[i].patch for i in self._by_size[size]])
+            stored = self._blocks.get(size)
+            if stored is None:
+                stored = np.stack([self.templates[i].patch for i in self._by_size[size]])
             masses = (stored.astype(np.float32) / 255.0).sum(axis=(1, 2)).astype(np.float32)
             ems = np.array([self.templates[i].em for i in self._by_size[size]], dtype=np.float32)
             stack = (stored, masses, ems)
@@ -365,28 +379,51 @@ class Library:
                 words = set(json.loads(str(stored["words"])))
         except (OSError, KeyError, ValueError, zipfile.BadZipFile) as err:
             raise LibraryError(f"{path}: cannot load the glyph library: {err}") from err
-        templates: list[Template] = []
-        offset = 0
+        offsets = np.zeros(len(labels) + 1, dtype=np.int64)
+        np.cumsum(heights * widths, out=offsets[1:])
+        if offsets[-1] != len(data):
+            raise LibraryError(f"{path}: patch data does not match the template sizes")
+        # Each size laid out as one block, in the order its templates are
+        # held, so that the search reads a size where it lies.
+        members: dict[tuple[int, int], list[int]] = {}
+        for index in range(len(labels)):
+            members.setdefault((int(heights[index]), int(widths[index])), []).append(index)
+        blocks: dict[tuple[int, int], Stored] = {}
+        patches: dict[int, Stored] = {}
+        for (h, w), indices in members.items():
+            block = np.stack([data[offsets[i] : offsets[i + 1]] for i in indices])
+            block = block.reshape(len(indices), h, w)
+            blocks[(h, w)] = block
+            for k, i in enumerate(indices):
+                patches[i] = block[k]
+        library = cls(dpi, words=words)
         for index, label in enumerate(labels):
-            h, w = int(heights[index]), int(widths[index])
-            patch = data[offset : offset + h * w].reshape(h, w)
-            offset += h * w
-            templates.append(
+            library.templates.append(
                 Template(
-                    str(label),
-                    patch,
+                    sys.intern(str(label)),
+                    patches[index],
                     float(ems[index]),
                     float(bases[index]),
                     float(lsbs[index]),
                     float(rsbs[index]),
-                    str(fonts[index]),
+                    sys.intern(str(fonts[index])),
                     int(counts[index]),
                     int(parts[index]),
                 )
             )
-        if offset != len(data):
-            raise LibraryError(f"{path}: patch data does not match the template sizes")
-        return cls(dpi, templates, words)
+        # A saved library was folded as it was built, so its templates are
+        # taken as they are; the index that folds them is built only if one
+        # is added.
+        library._by_size = {size: list(indices) for size, indices in members.items()}
+        library._blocks = blocks
+        library._indexed = False
+        return library
+
+
+def _key(template: Template) -> tuple[str, tuple[int, ...], bytes]:
+    """What a template is folded under: its label, its size and a digest of its pixels."""
+    patch = template.patch
+    return (template.label, patch.shape, hashlib.blake2b(patch.tobytes(), digest_size=16).digest())
 
 
 def _blur(patch: Patch) -> Patch:

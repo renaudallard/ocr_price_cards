@@ -159,8 +159,9 @@ def test_a_template_keeps_its_pixels_as_bytes() -> None:
     assert library.match(floats)[0].score == 0.0
 
 
-def test_a_size_is_searched_as_the_bytes_it_is_kept_in(tmp_path: Path) -> None:
-    # Four times the bytes as floats cost a reading of the shipped library
+def test_a_loaded_library_matches_on_its_own_bytes(tmp_path: Path) -> None:
+    # Each size is held once, as bytes, and the search reads it where it
+    # lies: four times that as floats cost a reading of the shipped library
     # three hundred megabytes on two pages.
     path = tmp_path / "lib.npz"
     built = _library()
@@ -168,6 +169,15 @@ def test_a_size_is_searched_as_the_bytes_it_is_kept_in(tmp_path: Path) -> None:
     loaded = Library.load(path)
     stored, _, _ = loaded._stack((16, 5))
     assert stored.dtype == np.uint8
+    assert all(np.shares_memory(stored, t.patch) for t in loaded.templates if t.height == 16)
     for patch in (_bar(16, 5), _bar(16, 5, gap=3), _bar(5, 5), _bar(15, 5)):
         want = [(m.label, m.score, m.sad) for m in built.match(patch)]
         assert [(m.label, m.score, m.sad) for m in loaded.match(patch)] == want
+    # A template added afterwards still folds into its twin, and a new one
+    # is searched with the rest of its size.
+    loaded.add(Template("l", _bar(16, 5), 21.0, 15.0, 0.05, 0.05, "Test"))
+    assert len(loaded) == len(built)
+    wide = _bar(16, 5)
+    wide[:, 0] = 1.0
+    loaded.add(Template("|", wide, 21.0, 15.0, 0.0, 0.0, "Test"))
+    assert loaded.match(wide)[0].label == "|"
