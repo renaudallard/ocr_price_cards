@@ -68,7 +68,10 @@ one; reading a five-page card peaks just under 1 GB.
 4. **Rows.** The marks of a row are read as the cheapest sequence of glyphs
    covering them, so an `m` that fell into two marks reads as the one `m`
    it is, a joined reading never explains less ink than the parts it
-   replaces, and a mark that reads as nothing stays unread.
+   replaces, and a mark that reads as nothing stays unread. Any bar
+   matches a dash of some size, the rule under a link too. A dash sits
+   between letters; a bar that can only be a dash and lies under a letter,
+   at its baseline or below, is the rule, and stays unread.
 5. **Ambiguity.** In Product Sans a lowercase `l` and a capital `I` are the
    same shape. An ambiguous glyph is settled from its row (a comma and an
    apostrophe are one shape at two heights), from its word's font size (a

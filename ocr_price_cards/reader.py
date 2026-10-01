@@ -99,6 +99,9 @@ NOISE = frozenset(".,-–—_=~'’‘`·:;\"“”*")
 STROKES = frozenset("iIl|1!")
 """Glyphs that are one bar, which the modules of a QR code also form when two of them line up."""
 
+DASHES = frozenset("-–—")
+"""Glyphs that are one bar lying flat, which a rule under a link also is."""
+
 _TEXT_ABOVE = 1.0
 _TEXT_BELOW = 0.3
 _COVERED = 0.3
@@ -137,6 +140,8 @@ _NOISE_REACH = 1.0
 _NOISE_BASELINE = 0.15
 _BASELINE_SLACK = 0.08
 _BASELINE_SLACK_PX = 1.5
+_RULE_TOP = 0.1
+_RULE_DEPTH = 0.5
 _MAX_AMBIGUOUS = 6
 _SPLIT_MIN_WIDTH = 8
 _SPLIT_MARGIN = 3
@@ -407,18 +412,60 @@ def _read_row(row: list[Piece], ink: Ink, library: Library) -> tuple[list[Read],
                 best, pick = total, (k, reading)
         cost[i] = best
         choice[i] = pick
-    reads: list[Read] = []
-    skipped: list[Blob] = []
+    picked: list[tuple[list[Piece], Reading | None]] = []
     i = count
     while i > 0:
         k, found = choice[i]
-        if found is None:
-            skipped.extend(order[i - 1].blobs)
+        picked.append((order[i - k : i], found))
+        i -= k
+    return _placed(picked)
+
+
+def _placed(picked: list[tuple[list[Piece], Reading | None]]) -> tuple[list[Read], list[Blob]]:
+    """The glyphs of a row's readings, and its marks left unread.
+
+    A dash is a bar, and so is the rule under a link, cut in two where a
+    descender crosses it. A dash sits between letters, clear of their
+    baseline; the rule runs under them, sharing their columns, from their
+    baseline down. A reading that finds a dash there is left unread whole,
+    as the rule is when no dash of its size is known.
+    """
+    letters = [
+        read
+        for _, found in picked
+        if found is not None
+        for read in found.reads
+        if read.match.label not in NOISE
+    ]
+    reads: list[Read] = []
+    skipped: list[Blob] = []
+    for pieces, found in picked:
+        if found is None or any(_under_letters(read, letters) for read in found.reads):
+            skipped.extend(blob for piece in pieces for blob in piece.blobs)
         else:
             reads.extend(found.reads)
             skipped.extend(found.skipped)
-        i -= k
     return reads, skipped
+
+
+def _under_letters(read: Read, letters: list[Read]) -> bool:
+    """Whether ``read`` can only be a dash, and lies under a letter of its row, at its baseline or below it.
+
+    Only a letter's baseline is taken, never the dash's own: a bar has no
+    size of its own, and matches a hyphen at one size as well as an em dash
+    at another, each putting the baseline somewhere else. A bar that could
+    also be an underscore is one: which of its readings sits on the row's
+    baseline is settled with the other ambiguous marks.
+    """
+    if any(match.label not in DASHES for match in read.candidates):
+        return False
+    for other in letters:
+        if min(read.blob.x1, other.blob.x1) <= max(read.blob.x0, other.blob.x0):
+            continue
+        em = other.match.template.em
+        if other.baseline - _RULE_TOP * em <= read.blob.y0 <= other.baseline + _RULE_DEPTH * em:
+            return True
+    return False
 
 
 def _joinable(a: Piece, b: Piece) -> bool:

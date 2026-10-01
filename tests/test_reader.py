@@ -309,3 +309,47 @@ def test_half_a_quotation_mark_beside_a_letter_stays_a_mark_of_its_own() -> None
     # make one glyph with it.
     stem, dot, other = _mark(495, 502, 4, 12), _mark(493, 497, 4, 4), _mark(496, 497, 4, 4)
     assert [len(group) for group in stack_groups([stem, dot, other])] == [3]
+
+
+def test_a_rule_under_a_link_is_not_read_as_dashes() -> None:
+    from ocr_price_cards.reader import Piece, Reading, _placed
+
+    def bar(blob: Blob, label: str = "—", em: float = 21.2, base: float = 7.7) -> Read:
+        template = Template(label, blob.patch, em, base, 0.0, 0.0)
+        return Read(blob, [Match(label, 0.02, template)], [blob])
+
+    def alone(read: Read) -> tuple[list[Piece], Reading]:
+        return [Piece([read.blob], read.blob)], Reading([read], [])
+
+    # The end of "Nordpool" on a September Ecofix card: the rule under the
+    # link runs along the foot of the letters, and the p's descender cuts it
+    # in two, each half the size of an em dash.
+    letters = [_read_of(_mark(1550 + 12 * k, 514, 12, 13), "o") for k in range(2)]
+    rule = _mark(1542, 527, 37, 3)
+    halves = Reading([bar(_mark(1542, 527, 18, 3)), bar(_mark(1559, 527, 20, 3))], [])
+    reads, skipped = _placed([alone(r) for r in letters] + [([Piece([rule], rule)], halves)])
+    assert [r.match.label for r in reads] == ["o", "o"]
+    assert skipped == [rule]
+    # An em dash between two words, clear of their baseline, is read.
+    words = [_read_of(_mark(1170 + 30 * k, 1092, 12, 13), "a") for k in range(2)]
+    reads, skipped = _placed([alone(r) for r in [*words, bar(_mark(1192, 1097, 19, 3))]])
+    assert sorted(r.match.label for r in reads) == ["a", "a", "—"]
+    assert skipped == []
+    # So is the hyphen of Zenne-Dijle, whatever size of hyphen its bar
+    # matched and wherever that size would put its own baseline.
+    name = [_read_of(_mark(328, 1203, 17, 17), "e"), _read_of(_mark(360, 1196, 21, 24), "D")]
+    hyphen = bar(_mark(346, 1208, 12, 4), "-", em=5.0, base=30.0)
+    reads, skipped = _placed([alone(r) for r in [*name, hyphen]])
+    assert sorted(r.match.label for r in reads) == ["-", "D", "e"]
+    assert skipped == []
+    # The underscore of Belpex_RLP sits at the foot of the x and the R and
+    # touches their columns, but it may be an underscore: it stays, for its
+    # row to settle.
+    word = [_read_of(_mark(1156, 502, 11, 12), "x"), _read_of(_mark(1177, 497, 12, 17), "R")]
+    bar_ = _mark(1166, 515, 12, 4)
+    dash_ = Template("–", bar_.patch, 20.2, 8.2, 0.0, 0.0)
+    under = Template("_", bar_.patch, 21.0, -2.2, 0.0, 0.0)
+    either = Read(bar_, [Match("–", 0.016, dash_), Match("_", 0.020, under)], [bar_])
+    reads, skipped = _placed([alone(r) for r in [*word, either]])
+    assert len(reads) == 3
+    assert skipped == []
