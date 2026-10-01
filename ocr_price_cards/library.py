@@ -379,6 +379,9 @@ class Library:
                 words = set(json.loads(str(stored["words"])))
         except (OSError, KeyError, ValueError, zipfile.BadZipFile) as err:
             raise LibraryError(f"{path}: cannot load the glyph library: {err}") from err
+        fields = (heights, widths, fonts, ems, bases, lsbs, rsbs, counts, parts)
+        if any(len(values) != len(labels) for values in fields):
+            raise LibraryError(f"{path}: the template fields do not agree on how many there are")
         offsets = np.zeros(len(labels) + 1, dtype=np.int64)
         np.cumsum(heights * widths, out=offsets[1:])
         if offsets[-1] != len(data):

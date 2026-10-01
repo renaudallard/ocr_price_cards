@@ -181,3 +181,14 @@ def test_a_loaded_library_matches_on_its_own_bytes(tmp_path: Path) -> None:
     wide[:, 0] = 1.0
     loaded.add(Template("|", wide, 21.0, 15.0, 0.0, 0.0, "Test"))
     assert loaded.match(wide)[0].label == "|"
+
+
+def test_a_library_whose_fields_disagree_is_refused(tmp_path: Path) -> None:
+    path = tmp_path / "lib.npz"
+    _library().save(path)
+    with np.load(path) as stored:
+        fields = dict(stored)
+    fields["lsb"] = fields["lsb"][:-1]
+    np.savez_compressed(path, **fields)
+    with pytest.raises(LibraryError):
+        Library.load(path)
