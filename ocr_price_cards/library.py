@@ -50,7 +50,7 @@ Patch = npt.NDArray[np.float32]
 Stored = npt.NDArray[np.uint8]
 """A template's pixels as they are kept: quantized, which is all they ever carried."""
 _Stack = tuple[
-    npt.NDArray[np.float32],
+    npt.NDArray[np.uint8],
     npt.NDArray[np.float32],
     npt.NDArray[np.float32],
 ]
@@ -267,7 +267,7 @@ class Library:
                             seen.add(label)
                             keep.append(i)
                     chosen = chosen[np.array(keep)]
-                subset = stack[chosen]
+                subset = stack[chosen].astype(np.float32) / 255.0
                 # Every placement of the templates inside the padded patch at
                 # once: windows is (rows, columns, th, tw), the difference
                 # (rows, columns, templates, th, tw).
@@ -290,19 +290,21 @@ class Library:
         return result
 
     def _stack(self, size: tuple[int, int]) -> _Stack:
+        """The templates of one size as bytes, with their ink masses and font sizes.
+
+        The search converts to floats just the templates it compares, so a
+        size costs its bytes and not four times as much.
+        """
         stack = self._stacks.get(size)
         if stack is None:
-            # The one place the stored bytes become the floats the search
-            # works in, once per size and only for a size that is asked for.
             stored = np.stack([self.templates[i].patch for i in self._by_size[size]])
-            patches = stored.astype(np.float32) / 255.0
-            masses = patches.sum(axis=(1, 2)).astype(np.float32)
+            masses = (stored.astype(np.float32) / 255.0).sum(axis=(1, 2)).astype(np.float32)
             ems = np.array([self.templates[i].em for i in self._by_size[size]], dtype=np.float32)
-            stack = (patches, masses, ems)
+            stack = (stored, masses, ems)
             self._stacks[size] = stack
         return stack
 
-    def _blurred(self, size: tuple[int, int], patches: Patch) -> Patch:
+    def _blurred(self, size: tuple[int, int], stored: Stored) -> Patch:
         """The templates of one size blurred, built the first time a size shortlists.
 
         Only a size holding more candidates than the shortlist is ever ranked
@@ -311,7 +313,7 @@ class Library:
         """
         blurred = self._blurs.get(size)
         if blurred is None:
-            blurred = np.stack([_blur(patch) for patch in patches])
+            blurred = np.stack([_blur(patch) for patch in stored.astype(np.float32) / 255.0])
             self._blurs[size] = blurred
         return blurred
 

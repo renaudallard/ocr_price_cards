@@ -157,3 +157,17 @@ def test_a_template_keeps_its_pixels_as_bytes() -> None:
     assert Template("l", quantize(floats), 21.0, 15.0, 0.05, 0.05).patch.dtype == np.uint8
     # The search still works in floats: an exact match scores zero.
     assert library.match(floats)[0].score == 0.0
+
+
+def test_a_size_is_searched_as_the_bytes_it_is_kept_in(tmp_path: Path) -> None:
+    # Four times the bytes as floats cost a reading of the shipped library
+    # three hundred megabytes on two pages.
+    path = tmp_path / "lib.npz"
+    built = _library()
+    built.save(path)
+    loaded = Library.load(path)
+    stored, _, _ = loaded._stack((16, 5))
+    assert stored.dtype == np.uint8
+    for patch in (_bar(16, 5), _bar(16, 5, gap=3), _bar(5, 5), _bar(15, 5)):
+        want = [(m.label, m.score, m.sad) for m in built.match(patch)]
+        assert [(m.label, m.score, m.sad) for m in loaded.match(patch)] == want
