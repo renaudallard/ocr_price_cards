@@ -290,3 +290,22 @@ def test_read_card_takes_the_same_arguments_as_read_pdf() -> None:
         assert card[name].annotation == param.annotation, name
         assert card[name].default == param.default, name
         assert card[name].kind == param.kind, name
+
+
+def test_half_a_quotation_mark_beside_a_letter_stays_a_mark_of_its_own() -> None:
+    from ocr_price_cards.reader import stack_groups
+
+    # The opening quote of "Friends" on a September Ecofix card at seven
+    # points: its two halves sit above and to the right of the s of the word
+    # before. Attached to the s, the right half could never be read with the
+    # left one as the quotation mark it is.
+    s = _mark(808, 2003, 11, 13)
+    left, right = _mark(818, 1999, 5, 6), _mark(822, 1999, 5, 5)
+    assert sorted(len(group) for group in stack_groups([s, left, right])) == [1, 1, 1]
+    # The same at an apostrophe before the u of d’un.
+    u, apostrophe = _mark(717, 1055, 14, 16), _mark(710, 1048, 6, 8)
+    assert sorted(len(group) for group in stack_groups([u, apostrophe])) == [1, 1]
+    # The dots of an ï at the same size share the stem's columns and still
+    # make one glyph with it.
+    stem, dot, other = _mark(495, 502, 4, 12), _mark(493, 497, 4, 4), _mark(496, 497, 4, 4)
+    assert [len(group) for group in stack_groups([stem, dot, other])] == [3]

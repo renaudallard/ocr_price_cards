@@ -561,8 +561,7 @@ def stack_groups(blobs: list[Blob]) -> list[list[Blob]]:
 
     for i, part in enumerate(order):
         best: tuple[int, float, int] | None = None
-        slack = part.width if part.height <= _SMALL_PART else 0
-        for j in np.nonzero((lefts < part.x1 + slack) & (rights > part.x0 - slack))[0].tolist():
+        for j in np.nonzero((lefts < part.x1) & (rights > part.x0))[0].tolist():
             if i == j or not _attaches(part, order[j]):
                 continue
             base = order[j]
@@ -583,15 +582,13 @@ def stack_groups(blobs: list[Blob]) -> list[list[Blob]]:
 def _attaches(part: Blob, base: Blob) -> bool:
     """Whether ``part`` is a piece of the glyph ``base`` is the body of.
 
-    A part sits over or under its base, so their columns overlap; the dots of
-    a diaeresis over a narrow stem only sit beside it, so a dot-sized part may
-    also be within its own width of the base's columns. A hyphen beside a
-    comma is as small and as close, but not a dot.
+    A part sits over or under its base, so their columns overlap. The dots of
+    an ï share the stem's columns too. A mark that only sits beside a letter
+    is a glyph of its own: an apostrophe before the u of d’un, or one half
+    of a quotation mark whose other half has to be read with it.
     """
     overlap = min(part.x1, base.x1) - max(part.x0, base.x0)
-    dot = part.height <= _SMALL_PART and part.width <= _SMALL_PART
-    beside = dot and overlap > -part.width
-    if overlap < _STACK_OVERLAP * part.width and not beside:
+    if overlap < _STACK_OVERLAP * part.width:
         return False
     if base.width > _BASE_WIDTH * part.width or part.width > _PART_WIDTH * base.width:
         return False

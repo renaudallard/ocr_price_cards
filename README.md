@@ -57,7 +57,9 @@ one; reading a five-page card peaks just under 1 GB.
 2. **Stacks.** A dot over a stem, dots over a vowel, the two dots of a colon
    and the parts of a percent sign are gathered into one mark before
    matching, each part attaching to the base whose columns it shares and
-   that it sits closest to.
+   that it sits closest to. A mark that only sits beside a letter is not
+   part of it: the apostrophe of `d’un` and each half of a quotation mark
+   are read on their own, and the two halves together as the one mark.
 3. **Matching.** A mark is compared with every template of about its size by
    the mean absolute difference over the mark's pixels, minimized over every
    placement within a pixel, and the ink mass rules out templates of another
