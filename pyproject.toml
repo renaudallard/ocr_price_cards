@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "ocr-price-cards"
-version = "0.3.0"
+version = "0.4.0"
 description = "Reads Belgian electricity, gas and water tariff cards published as page images"
 readme = "README.md"
 license = "BSD-2-Clause"
